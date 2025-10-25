@@ -65,11 +65,8 @@ new aws.iam.RolePolicy("handler-websocket-policy", {
         {
           Sid: "ApiGatewayWebSocketManagement",
           Effect: "Allow",
-          Action: [
-            "execute-api:ManageConnections",
-            "execute-api:Invoke"
-          ],
-          Resource: `${wsApiExecArn}/*`,
+          Action: ["execute-api:ManageConnections"],
+          Resource: `${wsApiExecArn}/*/*/@connections/*`,
         },
       ],
     })
