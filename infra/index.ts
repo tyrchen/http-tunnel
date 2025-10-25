@@ -195,7 +195,30 @@ const httpStage = new aws.apigatewayv2.Stage("http-stage", {
 
 const httpEndpoint = pulumi.interpolate`https://${httpApi.id}.execute-api.${appConfig.awsRegion}.amazonaws.com`;
 
-// Step 8: Create custom domains (optional)
+// Step 8: Create EventBridge rule for scheduled cleanup
+const cleanupRule = new aws.cloudwatch.EventRule("cleanup-schedule", {
+  name: pulumi.interpolate`http-tunnel-cleanup-${appConfig.environment}`,
+  description: "Triggers Lambda to clean up expired connections and pending requests every 12 hours",
+  scheduleExpression: "rate(12 hours)",
+  tags: {
+    ...tags,
+    Name: "HTTP Tunnel Cleanup Schedule",
+  },
+});
+
+new aws.cloudwatch.EventTarget("cleanup-target", {
+  rule: cleanupRule.name,
+  arn: handler.arn,
+});
+
+new aws.lambda.Permission("cleanup-permission", {
+  action: "lambda:InvokeFunction",
+  function: handler.name,
+  principal: "events.amazonaws.com",
+  sourceArn: cleanupRule.arn,
+});
+
+// Step 9: Create custom domains (optional)
 const customDomains = createCustomDomains(
   httpApi.id,
   httpStage.id,

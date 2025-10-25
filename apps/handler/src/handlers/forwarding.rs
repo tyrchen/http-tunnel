@@ -174,53 +174,56 @@ pub async fn handle_forwarding(
                 .map(|s| s.as_str())
                 .unwrap_or("");
 
-            // Decode body for rewriting
-            let body_bytes = http_tunnel_common::decode_body(&response.body)
-                .map_err(|e| format!("Failed to decode response body: {}", e))?;
-            let body_str = String::from_utf8_lossy(&body_bytes);
+            // Only decode and rewrite if content type needs rewriting (performance optimization)
+            let should_rewrite = content_rewrite::should_rewrite_content(content_type);
 
-            // Rewrite content (default strategy: FullRewrite)
-            match content_rewrite::rewrite_response_content(
-                &body_str,
-                content_type,
-                &tunnel_id,
-                content_rewrite::RewriteStrategy::FullRewrite,
-            ) {
-                Ok((rewritten_body, was_rewritten)) => {
-                    if was_rewritten {
-                        debug!(
-                            "Content rewritten for request {}: {} bytes -> {} bytes",
-                            request_id,
-                            body_str.len(),
-                            rewritten_body.len()
-                        );
+            let (rewritten_body, was_rewritten) = if should_rewrite {
+                // Decode body for rewriting
+                let body_bytes = http_tunnel_common::decode_body(&response.body)
+                    .map_err(|e| format!("Failed to decode response body: {}", e))?;
+                let body_str = String::from_utf8_lossy(&body_bytes);
 
-                        // Re-encode the rewritten body
-                        response.body = http_tunnel_common::encode_body(rewritten_body.as_bytes());
+                // Rewrite content (default strategy: FullRewrite)
+                content_rewrite::rewrite_response_content(
+                    &body_str,
+                    content_type,
+                    &tunnel_id,
+                    content_rewrite::RewriteStrategy::FullRewrite,
+                )
+                .unwrap_or_else(|e| {
+                    warn!("Content rewrite failed: {}, returning original", e);
+                    (body_str.to_string(), false)
+                })
+            } else {
+                // Skip decoding for binary content (images, videos, etc.)
+                debug!("Skipping rewrite for binary content type: {}", content_type);
+                (String::new(), false)
+            };
 
-                        // Update Content-Length header
-                        response.headers.insert(
-                            "content-length".to_string(),
-                            vec![rewritten_body.len().to_string()],
-                        );
+            if was_rewritten {
+                debug!(
+                    "Content rewritten for request {}: {} bytes",
+                    request_id,
+                    rewritten_body.len()
+                );
 
-                        // Remove Transfer-Encoding header if present (we're not chunking)
-                        response.headers.remove("transfer-encoding");
+                // Re-encode the rewritten body
+                response.body = http_tunnel_common::encode_body(rewritten_body.as_bytes());
 
-                        // Add debug header to indicate rewriting was applied
-                        response.headers.insert(
-                            "x-tunnel-rewrite-applied".to_string(),
-                            vec!["true".to_string()],
-                        );
-                    }
-                }
-                Err(e) => {
-                    // Log error but don't fail the request
-                    error!(
-                        "Failed to rewrite content for request {}: {}",
-                        request_id, e
-                    );
-                }
+                // Update Content-Length header
+                response.headers.insert(
+                    "content-length".to_string(),
+                    vec![rewritten_body.len().to_string()],
+                );
+
+                // Remove Transfer-Encoding header if present (we're not chunking)
+                response.headers.remove("transfer-encoding");
+
+                // Add debug header to indicate rewriting was applied
+                response.headers.insert(
+                    "x-tunnel-rewrite-applied".to_string(),
+                    vec!["true".to_string()],
+                );
             }
 
             // Convert HttpResponse to API Gateway response

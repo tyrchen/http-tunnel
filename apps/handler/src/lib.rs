@@ -10,7 +10,10 @@ use aws_sdk_apigatewaymanagement::primitives::Blob;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::types::AttributeValue;
 use http_tunnel_common::ConnectionMetadata;
-use http_tunnel_common::constants::{PENDING_REQUEST_TTL_SECS, REQUEST_TIMEOUT_SECS};
+use http_tunnel_common::constants::{
+    PENDING_REQUEST_TTL_SECS, POLL_BACKOFF_MULTIPLIER, POLL_INITIAL_INTERVAL_MS,
+    POLL_MAX_INTERVAL_MS, REQUEST_TIMEOUT_SECS,
+};
 use http_tunnel_common::protocol::{HttpRequest, HttpResponse};
 use http_tunnel_common::utils::{calculate_ttl, current_timestamp_millis, current_timestamp_secs};
 use std::time::{Duration, Instant};
@@ -260,9 +263,9 @@ pub async fn wait_for_response(client: &DynamoDbClient, request_id: &str) -> Res
     let timeout = Duration::from_secs(REQUEST_TIMEOUT_SECS);
     let start = Instant::now();
 
-    // Start with 50ms poll interval, max 500ms
-    let mut poll_interval = Duration::from_millis(50);
-    let max_poll_interval = Duration::from_millis(500);
+    // Start with initial poll interval, increase to max with backoff
+    let mut poll_interval = Duration::from_millis(POLL_INITIAL_INTERVAL_MS);
+    let max_poll_interval = Duration::from_millis(POLL_MAX_INTERVAL_MS);
 
     loop {
         if start.elapsed() > timeout {
@@ -312,7 +315,7 @@ pub async fn wait_for_response(client: &DynamoDbClient, request_id: &str) -> Res
         tokio::time::sleep(poll_interval).await;
 
         // Exponential backoff with max limit
-        poll_interval = std::cmp::min(poll_interval * 2, max_poll_interval);
+        poll_interval = std::cmp::min(poll_interval * POLL_BACKOFF_MULTIPLIER, max_poll_interval);
     }
 }
 

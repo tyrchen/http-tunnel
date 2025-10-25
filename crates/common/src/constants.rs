@@ -28,6 +28,15 @@ pub const RECONNECT_MAX_DELAY_MS: u64 = 60000;
 /// Multiplier for exponential backoff reconnection
 pub const RECONNECT_MULTIPLIER: f64 = 2.0;
 
+/// Initial polling interval when waiting for response (50ms)
+pub const POLL_INITIAL_INTERVAL_MS: u64 = 50;
+
+/// Maximum polling interval (500ms)
+pub const POLL_MAX_INTERVAL_MS: u64 = 500;
+
+/// Polling backoff multiplier
+pub const POLL_BACKOFF_MULTIPLIER: u32 = 2;
+
 #[cfg(test)]
 mod tests {
     use super::*;

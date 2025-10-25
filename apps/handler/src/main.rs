@@ -11,7 +11,7 @@ use aws_sdk_apigatewaymanagement::Client as ApiGatewayManagementClient;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use http_tunnel_handler::SharedClients;
 use http_tunnel_handler::handlers::{
-    handle_connect, handle_disconnect, handle_forwarding, handle_response,
+    handle_cleanup, handle_connect, handle_disconnect, handle_forwarding, handle_response,
 };
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::Value;
@@ -24,10 +24,18 @@ enum EventType {
     WebSocketDisconnect,
     WebSocketDefault,
     HttpApi,
+    ScheduledCleanup,
 }
 
 /// Detect event type by inspecting the JSON structure
 fn detect_event_type(value: &Value) -> Result<EventType, Error> {
+    // Check for EventBridge scheduled event (cleanup)
+    if value.get("source") == Some(&Value::String("aws.events".to_string()))
+        && value.get("detail-type").is_some()
+    {
+        return Ok(EventType::ScheduledCleanup);
+    }
+
     if let Some(request_context) = value.get("requestContext") {
         // Check for HTTP API events FIRST (they have requestContext.http)
         // This must be checked before routeKey because HTTP API v2 events also have routeKey
@@ -105,6 +113,10 @@ async fn function_handler(
             let response = handle_forwarding(lambda_event, clients).await?;
             serde_json::to_value(response)
                 .map_err(|e| format!("Failed to serialize response: {}", e).into())
+        }
+        EventType::ScheduledCleanup => {
+            // Handle scheduled cleanup from EventBridge
+            handle_cleanup(event.payload, &clients.dynamodb).await
         }
     }
 }
