@@ -6,7 +6,6 @@ import * as dotenv from "dotenv";
 dotenv.config({ path: __dirname + "/../.env" });
 
 const config = new pulumi.Config();
-const awsConfig = new pulumi.Config("aws");
 
 export interface AppConfig {
   environment: string;
@@ -31,8 +30,8 @@ export const appConfig: AppConfig = {
   lambdaArchitecture: (config.get("lambdaArchitecture") as "x86_64" | "arm64") ?? "x86_64",
   lambdaMemorySize: config.getNumber("lambdaMemorySize") ?? 256,
   lambdaTimeout: config.getNumber("lambdaTimeout") ?? 30,
-  awsRegion: awsConfig.require("region"),
-  awsProfile: awsConfig.require("profile"),
+  awsRegion: process.env.AWS_REGION || config.get("awsRegion") || "us-east-1",
+  awsProfile: process.env.AWS_PROFILE || config.get("awsProfile") || "default",
 };
 
 export const tags = {

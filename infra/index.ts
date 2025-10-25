@@ -6,6 +6,14 @@ import { createLambdaHandler } from "./src/lambda";
 import { createCustomDomains } from "./src/domain";
 import { appConfig, tags } from "./src/config";
 
+// Configure AWS provider with profile from environment
+const awsProfile = process.env.AWS_PROFILE || "default";
+const awsRegion = process.env.AWS_REGION || "us-east-1";
+const awsProvider = new aws.Provider("aws-provider", {
+  profile: awsProfile,
+  region: awsRegion,
+});
+
 // Step 1: Create DynamoDB tables
 const { connectionsTable, pendingRequestsTable } = createDynamoDBTables();
 

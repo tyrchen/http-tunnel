@@ -12,9 +12,9 @@ use lambda_runtime::{Error, LambdaEvent};
 use tracing::{debug, error, info};
 
 use crate::{
-    SharedClients, build_api_gateway_response, build_http_request, extract_tunnel_id_from_path,
-    lookup_connection_by_tunnel_id, save_pending_request, send_to_connection,
-    strip_tunnel_id_from_path, wait_for_response,
+    SharedClients, build_api_gateway_response, build_http_request, content_rewrite,
+    extract_tunnel_id_from_path, lookup_connection_by_tunnel_id, save_pending_request,
+    send_to_connection, strip_tunnel_id_from_path, wait_for_response,
 };
 
 /// Handler for HTTP API requests
@@ -112,11 +112,66 @@ pub async fn handle_forwarding(
 
     // Poll for response with timeout
     match wait_for_response(&clients.dynamodb, &request_id).await {
-        Ok(response) => {
+        Ok(mut response) => {
             info!(
                 "Received response for request {}: status {}",
                 request_id, response.status_code
             );
+
+            // Apply content rewriting if applicable
+            let content_type = response
+                .headers
+                .get("content-type")
+                .and_then(|v| v.first())
+                .map(|s| s.as_str())
+                .unwrap_or("");
+
+            // Decode body for rewriting
+            let body_bytes = http_tunnel_common::decode_body(&response.body)
+                .map_err(|e| format!("Failed to decode response body: {}", e))?;
+            let body_str = String::from_utf8_lossy(&body_bytes);
+
+            // Rewrite content (default strategy: FullRewrite)
+            match content_rewrite::rewrite_response_content(
+                &body_str,
+                content_type,
+                &tunnel_id,
+                content_rewrite::RewriteStrategy::FullRewrite,
+            ) {
+                Ok((rewritten_body, was_rewritten)) => {
+                    if was_rewritten {
+                        debug!(
+                            "Content rewritten for request {}: {} bytes -> {} bytes",
+                            request_id,
+                            body_str.len(),
+                            rewritten_body.len()
+                        );
+
+                        // Re-encode the rewritten body
+                        response.body = http_tunnel_common::encode_body(rewritten_body.as_bytes());
+
+                        // Update Content-Length header
+                        response.headers.insert(
+                            "content-length".to_string(),
+                            vec![rewritten_body.len().to_string()],
+                        );
+
+                        // Remove Transfer-Encoding header if present (we're not chunking)
+                        response.headers.remove("transfer-encoding");
+
+                        // Add debug header to indicate rewriting was applied
+                        response.headers.insert(
+                            "x-tunnel-rewrite-applied".to_string(),
+                            vec!["true".to_string()],
+                        );
+                    }
+                }
+                Err(e) => {
+                    // Log error but don't fail the request
+                    error!("Failed to rewrite content for request {}: {}", request_id, e);
+                }
+            }
+
             // Convert HttpResponse to API Gateway response
             Ok(build_api_gateway_response(response))
         }

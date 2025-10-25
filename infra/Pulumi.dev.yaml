@@ -1,6 +1,5 @@
 config:
   aws:region: us-east-1
-  aws:profile: your-aws-profile
   http-tunnel:environment: dev
   http-tunnel:enableCustomDomain: "true"
   http-tunnel:lambdaArchitecture: arm64
@@ -8,3 +7,5 @@ config:
   http-tunnel:lambdaTimeout: "30"
   # Sensitive values - use: pulumi config set http-tunnel:domainName <value>
   # Or create Pulumi.dev.local.yaml with sensitive values (gitignored)
+
+  aws:profile: sandbox-account-admin

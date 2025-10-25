@@ -16,6 +16,7 @@ use http_tunnel_common::utils::{calculate_ttl, current_timestamp_millis, current
 use std::time::{Duration, Instant};
 use tracing::{debug, error};
 
+pub mod content_rewrite;
 pub mod handlers;
 
 /// Shared AWS clients used across all handlers

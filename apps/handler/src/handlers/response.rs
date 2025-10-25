@@ -177,18 +177,43 @@ async fn handle_ready_message(
 
         info!("Sending ConnectionEstablished to {}: {}", connection_id, message_json);
 
-        client
-            .post_to_connection()
-            .connection_id(connection_id)
-            .data(Blob::new(message_json.as_bytes()))
-            .send()
-            .await
-            .map_err(|e| {
-                error!("Failed to send ConnectionEstablished to {}: {}", connection_id, e);
-                format!("Failed to send message: {}", e)
-            })?;
+        // Retry logic with exponential backoff for WebSocket dispatch failures
+        // API Gateway WebSocket connections may not be immediately ready to receive messages
+        let mut retry_count = 0;
+        let max_retries = 3;
+        let mut delay_ms = 100;
 
-        info!("✅ Sent ConnectionEstablished to {}", connection_id);
+        loop {
+            match client
+                .post_to_connection()
+                .connection_id(connection_id)
+                .data(Blob::new(message_json.as_bytes()))
+                .send()
+                .await
+            {
+                Ok(_) => {
+                    info!("✅ Sent ConnectionEstablished to {} (attempt {})", connection_id, retry_count + 1);
+                    break;
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count >= max_retries {
+                        error!(
+                            "Failed to send ConnectionEstablished to {} after {} attempts: {}",
+                            connection_id, max_retries, e
+                        );
+                        // Don't fail the request - connection is established, client will timeout and retry
+                        break;
+                    }
+                    warn!(
+                        "Failed to send ConnectionEstablished (attempt {}), retrying in {}ms: {}",
+                        retry_count, delay_ms, e
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                    delay_ms *= 2; // Exponential backoff
+                }
+            }
+        }
     } else {
         error!("API Gateway Management client not available");
     }
