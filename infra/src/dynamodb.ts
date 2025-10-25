@@ -46,6 +46,8 @@ export function createDynamoDBTables(): DynamoDBTables {
       attributeName: "ttl",
       enabled: true,
     },
+    streamEnabled: true,
+    streamViewType: "NEW_AND_OLD_IMAGES",
     tags: {
       ...tags,
       Name: "HTTP Tunnel Pending Requests",

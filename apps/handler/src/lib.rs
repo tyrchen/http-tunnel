@@ -9,6 +9,7 @@ use aws_sdk_apigatewaymanagement::Client as ApiGatewayManagementClient;
 use aws_sdk_apigatewaymanagement::primitives::Blob;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
 use aws_sdk_dynamodb::types::AttributeValue;
+use aws_sdk_eventbridge::Client as EventBridgeClient;
 use http_tunnel_common::ConnectionMetadata;
 use http_tunnel_common::constants::{
     PENDING_REQUEST_TTL_SECS, POLL_BACKOFF_MULTIPLIER, POLL_INITIAL_INTERVAL_MS,
@@ -23,10 +24,19 @@ pub mod auth;
 pub mod content_rewrite;
 pub mod handlers;
 
+/// Check if event-driven response pattern is enabled
+pub fn is_event_driven_enabled() -> bool {
+    std::env::var("USE_EVENT_DRIVEN")
+        .unwrap_or_else(|_| "false".to_string())
+        .to_lowercase()
+        == "true"
+}
+
 /// Shared AWS clients used across all handlers
 pub struct SharedClients {
     pub dynamodb: DynamoDbClient,
     pub apigw_management: Option<ApiGatewayManagementClient>,
+    pub eventbridge: EventBridgeClient,
 }
 
 /// Extract tunnel ID from request path (path-based routing)

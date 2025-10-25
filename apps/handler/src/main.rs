@@ -9,9 +9,10 @@
 
 use aws_sdk_apigatewaymanagement::Client as ApiGatewayManagementClient;
 use aws_sdk_dynamodb::Client as DynamoDbClient;
+use aws_sdk_eventbridge::Client as EventBridgeClient;
 use http_tunnel_handler::SharedClients;
 use http_tunnel_handler::handlers::{
-    handle_cleanup, handle_connect, handle_disconnect, handle_forwarding, handle_response,
+    handle_cleanup, handle_connect, handle_disconnect, handle_forwarding, handle_response, handle_stream,
 };
 use lambda_runtime::{Error, LambdaEvent, run, service_fn};
 use serde_json::Value;
@@ -25,10 +26,22 @@ enum EventType {
     WebSocketDefault,
     HttpApi,
     ScheduledCleanup,
+    DynamoDbStream,
 }
 
 /// Detect event type by inspecting the JSON structure
 fn detect_event_type(value: &Value) -> Result<EventType, Error> {
+    // Check for DynamoDB Stream event
+    if value.get("Records").is_some() {
+        if let Some(records) = value.get("Records").and_then(|v| v.as_array()) {
+            if let Some(first_record) = records.first() {
+                if first_record.get("eventSource") == Some(&Value::String("aws:dynamodb".to_string())) {
+                    return Ok(EventType::DynamoDbStream);
+                }
+            }
+        }
+    }
+
     // Check for EventBridge scheduled event (cleanup)
     if value.get("source") == Some(&Value::String("aws.events".to_string()))
         && value.get("detail-type").is_some()
@@ -118,8 +131,18 @@ async fn function_handler(
             // Handle scheduled cleanup from EventBridge
             handle_cleanup(event.payload, &clients.dynamodb).await
         }
+        EventType::DynamoDbStream => {
+            // Parse as DynamoDB Stream event and handle
+            let stream_event = serde_json::from_value(event.payload)
+                .map_err(|e| format!("Failed to parse DynamoDB Stream event: {}", e))?;
+            let lambda_event = LambdaEvent::new(stream_event, event.context);
+            handle_stream(lambda_event, clients).await?;
+            Ok(json!({"statusCode": 200}))
+        }
     }
 }
+
+use serde_json::json;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -157,9 +180,12 @@ async fn main() -> Result<(), Error> {
         None
     };
 
+    let eventbridge = EventBridgeClient::new(&config);
+
     let clients = SharedClients {
         dynamodb,
         apigw_management,
+        eventbridge,
     };
 
     // Run the Lambda runtime

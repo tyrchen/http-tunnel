@@ -23,7 +23,8 @@ export function createLambdaHandler(
   role: aws.iam.Role,
   connectionsTableName: pulumi.Output<string>,
   pendingRequestsTableName: pulumi.Output<string>,
-  websocketApiEndpoint: pulumi.Output<string>
+  websocketApiEndpoint: pulumi.Output<string>,
+  eventBusName?: pulumi.Output<string>
 ): aws.lambda.Function {
   const architecture = appConfig.lambdaArchitecture === "arm64" ? "arm64" : "x86_64";
 
@@ -37,13 +38,15 @@ export function createLambdaHandler(
     timeout: appConfig.lambdaTimeout,
     code: new pulumi.asset.FileArchive(lambdaCodePath),
     environment: {
-      variables: {
+      variables: pulumi.all([eventBusName]).apply(([busName]) => ({
         RUST_LOG: "info",
         CONNECTIONS_TABLE_NAME: connectionsTableName,
         PENDING_REQUESTS_TABLE_NAME: pendingRequestsTableName,
         DOMAIN_NAME: appConfig.domainName,
         WEBSOCKET_API_ENDPOINT: websocketApiEndpoint,
-      },
+        EVENT_BUS_NAME: busName || `http-tunnel-events-${appConfig.environment}`,
+        USE_EVENT_DRIVEN: "false", // Feature flag - set to "true" to enable
+      })),
     },
     tags: {
       ...tags,

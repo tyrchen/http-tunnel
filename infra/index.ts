@@ -5,6 +5,8 @@ import { createLambdaRole } from "./src/iam";
 import { createLambdaHandler } from "./src/lambda";
 import { createCustomDomains } from "./src/domain";
 import { createMonitoringDashboard, createAlarms, createBudget } from "./src/monitoring";
+import { createEventBus } from "./src/eventbridge";
+import { createStreamMapping } from "./src/streaming";
 import { appConfig, tags } from "./src/config";
 
 // Configure AWS provider with profile from environment
@@ -18,10 +20,14 @@ const awsProvider = new aws.Provider("aws-provider", {
 // Step 1: Create DynamoDB tables
 const { connectionsTable, pendingRequestsTable } = createDynamoDBTables();
 
+// Step 1b: Create EventBridge event bus for event-driven responses
+const eventBus = createEventBus();
+
 // Step 2: Create IAM role (without WebSocket API ARN policy initially)
 const handlerRole = createLambdaRole(
   connectionsTable.arn,
-  pendingRequestsTable.arn
+  pendingRequestsTable.arn,
+  eventBus.arn
 );
 
 // Step 3: Create WebSocket API first (without routes) to get the endpoint
@@ -52,7 +58,8 @@ const handler = createLambdaHandler(
   handlerRole,
   connectionsTable.name,
   pendingRequestsTable.name,
-  websocketEndpoint
+  websocketEndpoint,
+  eventBus.name
 );
 
 // Step 5: Add WebSocket API permissions to the IAM role
@@ -193,7 +200,10 @@ const httpStage = new aws.apigatewayv2.Stage("http-stage", {
 
 const httpEndpoint = pulumi.interpolate`https://${httpApi.id}.execute-api.${appConfig.awsRegion}.amazonaws.com`;
 
-// Step 8: Create EventBridge rule for scheduled cleanup
+// Step 8: Wire DynamoDB Stream to Lambda for event-driven responses
+const streamMapping = createStreamMapping(handler, pendingRequestsTable);
+
+// Step 9: Create EventBridge rule for scheduled cleanup
 const cleanupRule = new aws.cloudwatch.EventRule("cleanup-schedule", {
   name: pulumi.interpolate`http-tunnel-cleanup-${appConfig.environment}`,
   description: "Triggers Lambda to clean up expired connections and pending requests every 12 hours",

@@ -8,9 +8,11 @@ pub mod connect;
 pub mod disconnect;
 pub mod forwarding;
 pub mod response;
+pub mod stream;
 
 pub use cleanup::handle_cleanup;
 pub use connect::handle_connect;
 pub use disconnect::handle_disconnect;
 pub use forwarding::handle_forwarding;
 pub use response::handle_response;
+pub use stream::handle_stream;

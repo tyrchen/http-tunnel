@@ -8,12 +8,13 @@ const lambdaAssumeRolePolicy = aws.iam.assumeRolePolicyForPrincipal({
 
 /**
  * Create a unified IAM role for the single Lambda handler
- * This role has permissions for DynamoDB operations
+ * This role has permissions for DynamoDB operations, EventBridge, and DynamoDB Streams
  * WebSocket API permissions are added separately after the API is created
  */
 export function createLambdaRole(
   connectionsTableArn: pulumi.Output<string>,
-  pendingRequestsTableArn: pulumi.Output<string>
+  pendingRequestsTableArn: pulumi.Output<string>,
+  eventBusArn?: pulumi.Output<string>
 ): aws.iam.Role {
   // Unified handler role with all permissions
   const handlerRole = new aws.iam.Role("handler-lambda-role", {
@@ -67,10 +68,41 @@ export function createLambdaRole(
             ],
             Resource: pendingTableArn,
           },
+          {
+            Sid: "DynamoDBStreamRead",
+            Effect: "Allow",
+            Action: [
+              "dynamodb:GetRecords",
+              "dynamodb:GetShardIterator",
+              "dynamodb:DescribeStream",
+              "dynamodb:ListStreams",
+            ],
+            Resource: `${pendingTableArn}/stream/*`,
+          },
         ],
       })
     ),
   });
+
+  // EventBridge permissions (if event bus provided)
+  if (eventBusArn) {
+    new aws.iam.RolePolicy("handler-eventbridge-policy", {
+      role: handlerRole,
+      policy: eventBusArn.apply((busArn) =>
+        JSON.stringify({
+          Version: "2012-10-17",
+          Statement: [
+            {
+              Sid: "EventBridgePutEvents",
+              Effect: "Allow",
+              Action: ["events:PutEvents"],
+              Resource: busArn,
+            },
+          ],
+        })
+      ),
+    });
+  }
 
   return handlerRole;
 }

@@ -21,6 +21,13 @@ export interface AppConfig {
   enableMonitoring?: boolean;
   alertEmail?: string;
   monthlyBudget?: number;
+  // Security settings
+  requireAuth?: boolean;
+  jwtSecret?: string;
+  // Rate limiting
+  rateLimitPerSecond?: number;
+  rateLimitBurst?: number;
+  perTunnelRateLimit?: number;
 }
 
 export const appConfig: AppConfig = {
