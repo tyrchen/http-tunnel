@@ -111,6 +111,13 @@ export function createApiGateways(handler: aws.lambda.Function): ApiGateways {
   const httpApi = new aws.apigatewayv2.Api("http-api", {
     name: pulumi.interpolate`http-tunnel-http-${appConfig.environment}`,
     protocolType: "HTTP",
+    corsConfiguration: {
+      allowOrigins: ["*"],
+      allowMethods: ["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"],
+      allowHeaders: ["content-type", "authorization", "x-requested-with"],
+      exposeHeaders: ["content-length", "content-type"],
+      maxAge: 300,
+    },
     tags: {
       ...tags,
       Name: "HTTP Tunnel HTTP API",

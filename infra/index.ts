@@ -4,6 +4,7 @@ import { createDynamoDBTables } from "./src/dynamodb";
 import { createLambdaRole } from "./src/iam";
 import { createLambdaHandler } from "./src/lambda";
 import { createCustomDomains } from "./src/domain";
+import { createMonitoringDashboard, createAlarms, createBudget } from "./src/monitoring";
 import { appConfig, tags } from "./src/config";
 
 // Configure AWS provider with profile from environment
@@ -226,6 +227,31 @@ const customDomains = createCustomDomains(
   preliminaryWebsocketStage.id
 );
 
+// Step 10: Create monitoring resources (optional)
+let dashboard: aws.cloudwatch.Dashboard | undefined;
+let budget: aws.budgets.Budget | undefined;
+
+if (appConfig.enableMonitoring) {
+  dashboard = createMonitoringDashboard(
+    handler.name,
+    httpApi.id,
+    preliminaryWebsocketApi.id,
+    connectionsTable.name,
+    pendingRequestsTable.name
+  );
+
+  createAlarms(
+    handler.name,
+    httpApi.id,
+    preliminaryWebsocketApi.id,
+    connectionsTable.name
+  );
+
+  if (appConfig.alertEmail) {
+    budget = createBudget(appConfig.alertEmail);
+  }
+}
+
 // Exports
 export const connectionsTableName = connectionsTable.name;
 export const pendingRequestsTableName = pendingRequestsTable.name;
@@ -246,3 +272,7 @@ export const websocketDomainTarget = customDomains?.websocketDomainName.domainNa
 export const forwarderCommand = customDomains
   ? pulumi.interpolate`http-tunnel-forwarder --endpoint ${customDomains.websocketCustomEndpoint}`
   : pulumi.interpolate`http-tunnel-forwarder --endpoint ${websocketEndpoint}`;
+
+// Export monitoring info if enabled
+export const dashboardName = dashboard?.dashboardName;
+export const budgetName = budget?.name;

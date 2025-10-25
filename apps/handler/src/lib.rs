@@ -57,16 +57,6 @@ pub fn strip_tunnel_id_from_path(path: &str) -> String {
     }
 }
 
-/// DEPRECATED: Extract subdomain from host header (subdomain-based routing)
-/// Use extract_tunnel_id_from_path for path-based routing instead
-pub fn extract_subdomain(host: &str) -> Result<String> {
-    let parts: Vec<&str> = host.split('.').collect();
-    if parts.is_empty() {
-        return Err(anyhow!("Invalid host header"));
-    }
-    Ok(parts[0].to_string())
-}
-
 /// Save connection metadata to DynamoDB
 pub async fn save_connection_metadata(
     client: &DynamoDbClient,
@@ -143,16 +133,6 @@ pub async fn lookup_connection_by_tunnel_id(
         .ok_or_else(|| anyhow!("Missing connectionId in DynamoDB item"))?;
 
     Ok(connection_id.clone())
-}
-
-/// DEPRECATED: Look up connection ID by subdomain (subdomain-based routing)
-/// Use lookup_connection_by_tunnel_id for path-based routing instead
-pub async fn lookup_connection_by_subdomain(
-    client: &DynamoDbClient,
-    subdomain: &str,
-) -> Result<String> {
-    // For backwards compatibility, just call the new function
-    lookup_connection_by_tunnel_id(client, subdomain).await
 }
 
 /// Build HttpRequest from API Gateway event
@@ -385,25 +365,6 @@ pub async fn update_pending_request_with_response(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_extract_subdomain_simple() {
-        let subdomain = extract_subdomain("abc123.tunnel.example.com").unwrap();
-        assert_eq!(subdomain, "abc123");
-    }
-
-    #[test]
-    fn test_extract_subdomain_localhost() {
-        let subdomain = extract_subdomain("localhost").unwrap();
-        assert_eq!(subdomain, "localhost");
-    }
-
-    #[test]
-    fn test_extract_subdomain_with_port() {
-        let host = "abc123.tunnel.example.com:443";
-        let subdomain = extract_subdomain(host).unwrap();
-        assert_eq!(subdomain, "abc123");
-    }
 
     #[test]
     fn test_build_http_request_simple_get() {

@@ -18,6 +18,9 @@ export interface AppConfig {
   lambdaTimeout: number;
   awsRegion: string;
   awsProfile: string;
+  enableMonitoring?: boolean;
+  alertEmail?: string;
+  monthlyBudget?: number;
 }
 
 export const appConfig: AppConfig = {
@@ -32,6 +35,9 @@ export const appConfig: AppConfig = {
   lambdaTimeout: config.getNumber("lambdaTimeout") ?? 30,
   awsRegion: process.env.AWS_REGION || config.get("awsRegion") || "us-east-1",
   awsProfile: process.env.AWS_PROFILE || config.get("awsProfile") || "default",
+  enableMonitoring: config.getBoolean("enableMonitoring") ?? true,
+  alertEmail: config.get("alertEmail"),
+  monthlyBudget: config.getNumber("monthlyBudget") ?? 50,
 };
 
 export const tags = {

@@ -12,44 +12,33 @@ use serde_json::Value;
 use tracing::{error, info};
 
 /// Handler for scheduled cleanup (triggered by EventBridge)
-pub async fn handle_cleanup(
-    _event: Value,
-    dynamodb: &DynamoDbClient,
-) -> Result<Value, Error> {
+pub async fn handle_cleanup(_event: Value, dynamodb: &DynamoDbClient) -> Result<Value, Error> {
     info!("Starting TTL cleanup task");
 
-    let connections_table = std::env::var("CONNECTIONS_TABLE_NAME")
-        .unwrap_or_else(|_| "connections".to_string());
+    let connections_table =
+        std::env::var("CONNECTIONS_TABLE_NAME").unwrap_or_else(|_| "connections".to_string());
     let pending_requests_table = std::env::var("PENDING_REQUESTS_TABLE_NAME")
         .unwrap_or_else(|_| "pending-requests".to_string());
 
     let now = current_timestamp_secs();
 
     // Cleanup expired connections
-    let connections_deleted = cleanup_expired_items(
-        dynamodb,
-        &connections_table,
-        "connectionId",
-        now,
-    )
-    .await
-    .map_err(|e| {
-        error!("Failed to cleanup connections: {}", e);
-        format!("Cleanup failed: {}", e)
-    })?;
+    let connections_deleted =
+        cleanup_expired_items(dynamodb, &connections_table, "connectionId", now)
+            .await
+            .map_err(|e| {
+                error!("Failed to cleanup connections: {}", e);
+                format!("Cleanup failed: {}", e)
+            })?;
 
     // Cleanup expired pending requests
-    let requests_deleted = cleanup_expired_items(
-        dynamodb,
-        &pending_requests_table,
-        "requestId",
-        now,
-    )
-    .await
-    .map_err(|e| {
-        error!("Failed to cleanup pending requests: {}", e);
-        format!("Cleanup failed: {}", e)
-    })?;
+    let requests_deleted =
+        cleanup_expired_items(dynamodb, &pending_requests_table, "requestId", now)
+            .await
+            .map_err(|e| {
+                error!("Failed to cleanup pending requests: {}", e);
+                format!("Cleanup failed: {}", e)
+            })?;
 
     info!(
         "Cleanup completed: {} connections, {} pending requests deleted",
@@ -110,7 +99,6 @@ async fn cleanup_expired_items(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_cleanup_response_format() {

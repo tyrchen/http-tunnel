@@ -19,7 +19,7 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 http-tunnel-common.workspace = true
-tokio = { workspace = true, features = ["full"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "signal"] }
 serde.workspace = true
 serde_json.workspace = true
 
