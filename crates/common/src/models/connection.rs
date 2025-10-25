@@ -81,7 +81,7 @@ mod tests {
         );
 
         assert_eq!(metadata.connection_id, "conn_123");
-        assert_eq!(metadata.public_subdomain, "abc123def456");
+        assert_eq!(metadata.tunnel_id, "abc123def456");
         assert_eq!(metadata.created_at, 1234567890);
         assert_eq!(metadata.ttl, 1234574090);
         assert!(metadata.client_info.is_none());
@@ -118,11 +118,11 @@ mod tests {
 
         let json = serde_json::to_string(&metadata).unwrap();
         assert!(json.contains(r#""connection_id":"conn_abc"#));
-        assert!(json.contains(r#""public_subdomain":"xyz789"#));
+        assert!(json.contains(r#""tunnel_id":"xyz789"#));
 
         let parsed: ConnectionMetadata = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.connection_id, metadata.connection_id);
-        assert_eq!(parsed.public_subdomain, metadata.public_subdomain);
+        assert_eq!(parsed.tunnel_id, metadata.tunnel_id);
         assert_eq!(parsed.created_at, metadata.created_at);
         assert_eq!(parsed.ttl, metadata.ttl);
     }
@@ -165,8 +165,8 @@ mod tests {
     fn test_connection_metadata_default_client_info() {
         let json = r#"{
             "connection_id": "conn_123",
-            "public_subdomain": "abc123",
-            "public_url": "https://abc123.tunnel.example.com",
+            "tunnel_id": "abc123",
+            "public_url": "https://tunnel.example.com/abc123",
             "created_at": 1234567890,
             "ttl": 1234574090
         }"#;

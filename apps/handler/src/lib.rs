@@ -72,10 +72,7 @@ pub async fn save_connection_metadata(
             "connectionId",
             AttributeValue::S(metadata.connection_id.clone()),
         )
-        .item(
-            "tunnelId",
-            AttributeValue::S(metadata.tunnel_id.clone()),
-        )
+        .item("tunnelId", AttributeValue::S(metadata.tunnel_id.clone()))
         .item("publicUrl", AttributeValue::S(metadata.public_url.clone()))
         .item(
             "createdAt",

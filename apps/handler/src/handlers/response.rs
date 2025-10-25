@@ -61,7 +61,8 @@ pub async fn handle_response(
     match message {
         Message::Ready => {
             info!("Received Ready message from agent, sending ConnectionEstablished");
-            handle_ready_message(&clients.dynamodb, &clients.apigw_management, connection_id).await?;
+            handle_ready_message(&clients.dynamodb, &clients.apigw_management, connection_id)
+                .await?;
         }
         Message::HttpResponse(response) => {
             info!(
@@ -148,7 +149,10 @@ async fn handle_ready_message(
         .send()
         .await
         .map_err(|e| {
-            error!("Failed to get connection metadata for {}: {}", connection_id, e);
+            error!(
+                "Failed to get connection metadata for {}: {}",
+                connection_id, e
+            );
             format!("Failed to get connection metadata: {}", e)
         })?;
 
@@ -175,7 +179,10 @@ async fn handle_ready_message(
         let message_json = serde_json::to_string(&message)
             .map_err(|e| format!("Failed to serialize ConnectionEstablished: {}", e))?;
 
-        info!("Sending ConnectionEstablished to {}: {}", connection_id, message_json);
+        info!(
+            "Sending ConnectionEstablished to {}: {}",
+            connection_id, message_json
+        );
 
         // Retry logic with exponential backoff for WebSocket dispatch failures
         // API Gateway WebSocket connections may not be immediately ready to receive messages
@@ -192,7 +199,11 @@ async fn handle_ready_message(
                 .await
             {
                 Ok(_) => {
-                    info!("✅ Sent ConnectionEstablished to {} (attempt {})", connection_id, retry_count + 1);
+                    info!(
+                        "✅ Sent ConnectionEstablished to {} (attempt {})",
+                        connection_id,
+                        retry_count + 1
+                    );
                     break;
                 }
                 Err(e) => {

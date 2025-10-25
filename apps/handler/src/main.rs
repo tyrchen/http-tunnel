@@ -85,7 +85,11 @@ async fn function_handler(
         EventType::WebSocketDefault => {
             // Parse as WebSocket event and handle response
             // Log the payload for debugging
-            info!("WebSocket $default event payload: {}", serde_json::to_string(&event.payload).unwrap_or_else(|_| "failed to serialize".to_string()));
+            info!(
+                "WebSocket $default event payload: {}",
+                serde_json::to_string(&event.payload)
+                    .unwrap_or_else(|_| "failed to serialize".to_string())
+            );
             let ws_event = serde_json::from_value(event.payload)
                 .map_err(|e| format!("Failed to parse WebSocket default event: {}", e))?;
             let lambda_event = LambdaEvent::new(ws_event, event.context);

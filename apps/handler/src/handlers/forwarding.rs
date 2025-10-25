@@ -32,7 +32,10 @@ pub async fn handle_forwarding(
     debug!("Processing HTTP request, path: {}", original_path);
 
     let tunnel_id = extract_tunnel_id_from_path(original_path).map_err(|e| {
-        error!("Failed to extract tunnel ID from path {}: {}", original_path, e);
+        error!(
+            "Failed to extract tunnel ID from path {}: {}",
+            original_path, e
+        );
         format!("Invalid request path - missing tunnel ID: {}", e)
     })?;
 
@@ -41,10 +44,7 @@ pub async fn handle_forwarding(
 
     debug!(
         "Forwarding request for tunnel_id: {} (method: {}, original_path: {}, actual_path: {})",
-        tunnel_id,
-        request.http_method,
-        original_path,
-        actual_path
+        tunnel_id, request.http_method, original_path, actual_path
     );
 
     // Update request path to stripped version
@@ -168,7 +168,10 @@ pub async fn handle_forwarding(
                 }
                 Err(e) => {
                     // Log error but don't fail the request
-                    error!("Failed to rewrite content for request {}: {}", request_id, e);
+                    error!(
+                        "Failed to rewrite content for request {}: {}",
+                        request_id, e
+                    );
                 }
             }
 

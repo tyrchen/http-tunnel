@@ -5,8 +5,7 @@
 //! returns a success response.
 
 use aws_lambda_events::apigw::{ApiGatewayProxyResponse, ApiGatewayWebsocketProxyRequest};
-use aws_lambda_events::encodings::Body;
-use http_tunnel_common::{ConnectionMetadata, Message};
+use http_tunnel_common::ConnectionMetadata;
 use http_tunnel_common::constants::CONNECTION_TTL_SECS;
 use http_tunnel_common::utils::{calculate_ttl, current_timestamp_secs, generate_subdomain};
 use lambda_runtime::{Error, LambdaEvent};

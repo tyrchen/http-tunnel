@@ -14,20 +14,15 @@ use regex::{Captures, Regex};
 use tracing::{debug, warn};
 
 /// Strategy for rewriting content
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RewriteStrategy {
     /// No rewriting (pass through unchanged)
     None,
     /// HTML: inject <base> tag only
     BaseTag,
     /// HTML: rewrite all absolute paths
+    #[default]
     FullRewrite,
-}
-
-impl Default for RewriteStrategy {
-    fn default() -> Self {
-        RewriteStrategy::FullRewrite
-    }
 }
 
 /// Check if content type should be rewritten
@@ -35,7 +30,11 @@ pub fn should_rewrite_content(content_type: &str) -> bool {
     let content_type_lower = content_type.to_lowercase();
     matches!(
         content_type_lower.split(';').next().unwrap_or("").trim(),
-        "text/html" | "text/css" | "application/javascript" | "text/javascript" | "application/json"
+        "text/html"
+            | "text/css"
+            | "application/javascript"
+            | "text/javascript"
+            | "application/json"
     )
 }
 
@@ -95,8 +94,6 @@ static HTML_SRC_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"src="(/[^"]*)""#).expect("Invalid regex"));
 static HTML_ACTION_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r#"action="(/[^"]*)""#).expect("Invalid regex"));
-static HTML_DATA_URL_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r#"(href|src)="(https?://|data:|//|#)"#).expect("Invalid regex"));
 
 // Match url() with various quote styles
 static CSS_URL_SINGLE_QUOTE: Lazy<Regex> =
@@ -406,7 +403,8 @@ fn rewrite_json(body: &str, prefix: &str) -> Result<String> {
             || path_lower.starts_with("/docs")
             || path_lower.starts_with("/openapi")
             || path_lower.starts_with("/swagger")
-            || path_lower.starts_with("/todos") // Common API path
+            || path_lower.starts_with("/todos")
+        // Common API path
         {
             format!(r#""{}{}""#, prefix, path)
         } else {
@@ -454,56 +452,63 @@ mod tests {
     fn test_rewrite_html_href() {
         let html = r#"<a href="/api/users">Users</a>"#;
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, r#"<a href="/abc123/api/users">Users</a>"#);
+        assert!(result.contains(r#"<a href="/abc123/api/users">Users</a>"#));
+        assert!(result.contains("window.__TUNNEL_CONTEXT__"));
     }
 
     #[test]
     fn test_rewrite_html_src() {
         let html = r#"<img src="/images/logo.png">"#;
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, r#"<img src="/abc123/images/logo.png">"#);
+        assert!(result.contains(r#"<img src="/abc123/images/logo.png">"#));
     }
 
     #[test]
     fn test_rewrite_html_action() {
         let html = r#"<form action="/submit">...</form>"#;
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, r#"<form action="/abc123/submit">...</form>"#);
+        assert!(result.contains(r#"<form action="/abc123/submit">...</form>"#));
     }
 
     #[test]
     fn test_dont_rewrite_external_url() {
         let html = r#"<a href="https://example.com/page">External</a>"#;
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, html);
+        // External URL should be unchanged
+        assert!(result.contains(r#"href="https://example.com/page""#));
     }
 
     #[test]
     fn test_dont_rewrite_protocol_relative_url() {
         let html = r#"<script src="//cdn.example.com/script.js"></script>"#;
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, html);
+        // Protocol-relative URL should be unchanged
+        assert!(result.contains(r#"src="//cdn.example.com/script.js""#));
     }
 
     #[test]
     fn test_dont_rewrite_data_url() {
         let html = r#"<img src="data:image/png;base64,iVBOR...">"#;
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, html);
+        // Data URL should be unchanged
+        assert!(result.contains(r#"src="data:image/png;base64,iVBOR...""#));
     }
 
     #[test]
     fn test_dont_rewrite_anchor() {
         let html = "<a href=\"#section\">Jump</a>";
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, html);
+        // Anchor should be unchanged
+        assert!(result.contains("href=\"#section\""));
     }
 
     #[test]
     fn test_dont_double_prefix() {
         let html = r#"<a href="/abc123/api/users">Already prefixed</a>"#;
         let result = rewrite_html(html, "/abc123").unwrap();
-        assert_eq!(result, html);
+        // Should not double-prefix
+        assert!(result.contains(r#"href="/abc123/api/users""#));
+        assert!(!result.contains(r#"href="/abc123/abc123/api/users""#));
     }
 
     #[test]
@@ -605,13 +610,9 @@ mod tests {
     #[test]
     fn test_rewrite_response_content_non_rewritable() {
         let content = "binary data";
-        let (result, rewritten) = rewrite_response_content(
-            content,
-            "image/png",
-            "abc123",
-            RewriteStrategy::FullRewrite,
-        )
-        .unwrap();
+        let (result, rewritten) =
+            rewrite_response_content(content, "image/png", "abc123", RewriteStrategy::FullRewrite)
+                .unwrap();
         assert!(!rewritten);
         assert_eq!(result, content);
     }

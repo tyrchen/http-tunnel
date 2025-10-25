@@ -2,7 +2,7 @@
 
 ## Analyze existing lambda code
 
-Please carefully review existing labmda code again @specs/serverless/0004-lambda.md spec, see if implementation is complete. Also see if proper dynamodb table is built. Add enough log info for better observability. Make a concrete plan rather than try this and that once you satified with the plan, execute
+Please carefully review existing lambda code again @specs/serverless/0004-lambda.md spec, see if implementation is complete. Also see if proper dynamodb table is built. Add enough log info for better observability. Make a concrete plan rather than try this and that once you satisfied with the plan, execute
 
 ## Fix subpath issue
 

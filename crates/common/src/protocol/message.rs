@@ -63,8 +63,8 @@ mod tests {
     fn test_connection_established_serialization() {
         let msg = Message::ConnectionEstablished {
             connection_id: "conn_123".to_string(),
-            public_subdomain: "abc123def456".to_string(),
-            public_url: "https://abc123def456.tunnel.example.com".to_string(),
+            tunnel_id: "abc123def456".to_string(),
+            public_url: "https://tunnel.example.com/abc123def456".to_string(),
         };
 
         let json = serde_json::to_string(&msg).unwrap();
