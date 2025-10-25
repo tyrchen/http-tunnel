@@ -183,6 +183,10 @@ const httpStage = new aws.apigatewayv2.Stage("http-stage", {
   apiId: httpApi.id,
   name: appConfig.environment,
   autoDeploy: true,
+  defaultRouteSettings: {
+    throttlingBurstLimit: 100,  // Burst capacity
+    throttlingRateLimit: 50,     // Steady-state requests/sec
+  },
   tags: {
     ...tags,
     Name: "HTTP Tunnel HTTP Stage",

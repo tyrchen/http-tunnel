@@ -16,8 +16,8 @@ pub const REQUEST_TIMEOUT_SECS: u64 = 25;
 /// Pending request TTL in DynamoDB (30 seconds)
 pub const PENDING_REQUEST_TTL_SECS: i64 = 30;
 
-/// Maximum request/response body size (6 MB per API Gateway limit)
-pub const MAX_BODY_SIZE_BYTES: usize = 6 * 1024 * 1024;
+/// Maximum request/response body size (2 MB per API Gateway limit)
+pub const MAX_BODY_SIZE_BYTES: usize = 2 * 1024 * 1024;
 
 /// Minimum delay for exponential backoff reconnection (1 second)
 pub const RECONNECT_MIN_DELAY_MS: u64 = 1000;
@@ -43,6 +43,6 @@ mod tests {
         const _: () = assert!(RECONNECT_MULTIPLIER > 1.0);
 
         // Verify size limits
-        assert_eq!(MAX_BODY_SIZE_BYTES, 6 * 1024 * 1024);
+        assert_eq!(MAX_BODY_SIZE_BYTES, 2 * 1024 * 1024);
     }
 }

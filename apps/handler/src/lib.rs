@@ -16,6 +16,7 @@ use http_tunnel_common::utils::{calculate_ttl, current_timestamp_millis, current
 use std::time::{Duration, Instant};
 use tracing::{debug, error};
 
+pub mod auth;
 pub mod content_rewrite;
 pub mod handlers;
 
@@ -32,7 +33,13 @@ pub fn extract_tunnel_id_from_path(path: &str) -> Result<String> {
     if parts.is_empty() || parts[0].is_empty() {
         return Err(anyhow!("Missing tunnel ID in path"));
     }
-    Ok(parts[0].to_string())
+    let tunnel_id = parts[0].to_string();
+
+    // Validate tunnel ID format to prevent injection attacks
+    http_tunnel_common::validation::validate_tunnel_id(&tunnel_id)
+        .context("Invalid tunnel ID format")?;
+
+    Ok(tunnel_id)
 }
 
 /// Strip tunnel ID from path before forwarding to local service

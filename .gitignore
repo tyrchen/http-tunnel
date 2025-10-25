@@ -5,3 +5,4 @@ Cargo.lock
 # Environment files with sensitive configuration
 infra/.env
 .env
+infra/lambda/

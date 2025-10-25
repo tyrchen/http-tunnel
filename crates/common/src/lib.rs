@@ -8,6 +8,7 @@ pub mod error;
 pub mod models;
 pub mod protocol;
 pub mod utils;
+pub mod validation;
 
 // Re-export commonly used types for convenience
 pub use error::{Result, TunnelError};

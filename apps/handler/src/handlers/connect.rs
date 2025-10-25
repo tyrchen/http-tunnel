@@ -11,13 +11,26 @@ use http_tunnel_common::utils::{calculate_ttl, current_timestamp_secs, generate_
 use lambda_runtime::{Error, LambdaEvent};
 use tracing::{error, info};
 
-use crate::{SharedClients, save_connection_metadata};
+use crate::{SharedClients, auth, save_connection_metadata};
 
 /// Handler for WebSocket $connect route
 pub async fn handle_connect(
     event: LambdaEvent<ApiGatewayWebsocketProxyRequest>,
     clients: &SharedClients,
 ) -> Result<ApiGatewayProxyResponse, Error> {
+    // Authenticate request if auth is enabled (before extracting connection_id)
+    if let Err(e) = auth::authenticate_request(&event.payload) {
+        use aws_lambda_events::encodings::Body;
+        error!("Authentication failed: {}", e);
+        return Ok(ApiGatewayProxyResponse {
+            status_code: 401,
+            headers: Default::default(),
+            multi_value_headers: Default::default(),
+            body: Some(Body::Text("Unauthorized".to_string())),
+            is_base64_encoded: false,
+        });
+    }
+
     let request_context = event.payload.request_context;
     let connection_id = request_context
         .connection_id

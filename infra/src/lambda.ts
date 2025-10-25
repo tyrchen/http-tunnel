@@ -1,8 +1,20 @@
 import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
+import * as path from "path";
+import * as fs from "fs";
 import { appConfig, tags } from "./config";
 
-const lambdaCodePath = process.env.HOME + "/.target/lambda/handler";
+// Use infra/lambda directory for Lambda code
+const lambdaCodePath = process.env.LAMBDA_CODE_PATH ||
+  path.join(__dirname, "../lambda/handler");
+
+// Validate Lambda code exists before deployment
+if (!fs.existsSync(path.join(lambdaCodePath, "bootstrap"))) {
+  throw new Error(
+    `Lambda code not found at ${lambdaCodePath}. ` +
+    `Run 'cargo lambda build --release --arm64 --bin handler' first.`
+  );
+}
 
 /**
  * Create the unified Lambda handler that handles all routes

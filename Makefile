@@ -17,7 +17,16 @@ help:
 build-lambda:
 	@echo "Building Lambda handler..."
 	cargo lambda build --release --arm64 --bin handler
-	@echo "Lambda binary built at: target/lambda/handler/bootstrap"
+	@echo "Copying Lambda to infra/lambda/handler..."
+	@mkdir -p infra/lambda/handler
+	@if [ -d "$$HOME/.target/lambda/handler" ]; then \
+		cp -r $$HOME/.target/lambda/handler/* infra/lambda/handler/; \
+	elif [ -d "target/lambda/handler" ]; then \
+		cp -r target/lambda/handler/* infra/lambda/handler/; \
+	else \
+		echo "Error: Lambda build output not found"; exit 1; \
+	fi
+	@echo "✓ Lambda binary built and copied to infra/lambda/handler/bootstrap"
 
 # Build forwarder for local development
 build-forwarder:
@@ -54,5 +63,6 @@ run-testapp:
 clean:
 	@echo "Cleaning build artifacts..."
 	cargo clean
+	rm -rf infra/lambda/handler
 	rm -rf infra/node_modules
 	rm -rf infra/dist

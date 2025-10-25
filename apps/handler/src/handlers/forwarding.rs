@@ -6,10 +6,11 @@
 //! it returns a 504 Gateway Timeout.
 
 use aws_lambda_events::apigw::{ApiGatewayProxyRequest, ApiGatewayProxyResponse};
+use http_tunnel_common::constants::MAX_BODY_SIZE_BYTES;
 use http_tunnel_common::protocol::Message;
 use http_tunnel_common::utils::generate_request_id;
 use lambda_runtime::{Error, LambdaEvent};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     SharedClients, build_api_gateway_response, build_http_request, content_rewrite,
@@ -36,7 +37,8 @@ pub async fn handle_forwarding(
             "Failed to extract tunnel ID from path {}: {}",
             original_path, e
         );
-        format!("Invalid request path - missing tunnel ID: {}", e)
+        // Sanitized error - don't leak internal details
+        "Invalid request path".to_string()
     })?;
 
     // Strip tunnel ID from path before forwarding to local service
@@ -50,6 +52,48 @@ pub async fn handle_forwarding(
     // Update request path to stripped version
     request.path = Some(actual_path);
 
+    // Enforce request size limits
+    if let Some(body) = &request.body {
+        let body_size = if request.is_base64_encoded {
+            // Estimate decoded size (base64 is ~33% larger than binary)
+            (body.len() * 3) / 4
+        } else {
+            body.len()
+        };
+
+        if body_size > MAX_BODY_SIZE_BYTES {
+            use aws_lambda_events::encodings::Body;
+            use http::header::{HeaderName, HeaderValue};
+
+            warn!(
+                "Request body too large: {} bytes (max: {} bytes) for tunnel {}",
+                body_size, MAX_BODY_SIZE_BYTES, tunnel_id
+            );
+
+            return Ok(ApiGatewayProxyResponse {
+                status_code: 413,
+                headers: [
+                    (
+                        HeaderName::from_static("content-type"),
+                        HeaderValue::from_static("text/plain"),
+                    ),
+                    (
+                        HeaderName::from_static("x-tunnel-error"),
+                        HeaderValue::from_static("Request Entity Too Large"),
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+                multi_value_headers: Default::default(),
+                body: Some(Body::Text(format!(
+                    "Request body too large: {} bytes (maximum: {} bytes)",
+                    body_size, MAX_BODY_SIZE_BYTES
+                ))),
+                is_base64_encoded: false,
+            });
+        }
+    }
+
     // Look up connection ID by tunnel ID
     let connection_id = lookup_connection_by_tunnel_id(&clients.dynamodb, &tunnel_id)
         .await
@@ -58,7 +102,8 @@ pub async fn handle_forwarding(
                 "Failed to lookup connection for tunnel_id {}: {}",
                 tunnel_id, e
             );
-            format!("Tunnel not found for ID: {}", tunnel_id)
+            // Sanitized error - don't leak internal details
+            "Tunnel not found or unavailable".to_string()
         })?;
 
     debug!("Found connection: {}", connection_id);
@@ -80,14 +125,16 @@ pub async fn handle_forwarding(
     .await
     .map_err(|e| {
         error!("Failed to save pending request {}: {}", request_id, e);
-        format!("Failed to save request: {}", e)
+        // Sanitized error - don't leak internal details
+        "Service temporarily unavailable".to_string()
     })?;
 
     // Forward request to agent via WebSocket
     let message = Message::HttpRequest(http_request);
     let message_json = serde_json::to_string(&message).map_err(|e| {
         error!("Failed to serialize message: {}", e);
-        format!("Failed to serialize request: {}", e)
+        // Sanitized error - don't leak internal details
+        "Service temporarily unavailable".to_string()
     })?;
 
     let apigw_management = clients
@@ -102,7 +149,8 @@ pub async fn handle_forwarding(
                 "Failed to send request {} to connection {}: {}",
                 request_id, connection_id, e
             );
-            format!("Failed to forward request to agent: {}", e)
+            // Sanitized error - don't leak internal details
+            "Tunnel connection unavailable".to_string()
         })?;
 
     info!(

@@ -41,6 +41,12 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 regex = "1.10"
 once_cell = "1.19"
 
+# Authentication
+jsonwebtoken = { version = "10", default-features = false, features = [
+  "rust_crypto",
+] }
+chrono = "0.4.42"
+
 [[bin]]
 name = "handler"
 path = "src/main.rs"
