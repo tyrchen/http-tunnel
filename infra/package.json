@@ -1,0 +1,21 @@
+{
+  "name": "http-tunnel-infra",
+  "version": "1.0.0",
+  "description": "HTTP Tunnel Infrastructure",
+  "main": "index.ts",
+  "scripts": {
+    "build": "tsc",
+    "deploy": "pulumi up",
+    "destroy": "pulumi destroy",
+    "preview": "pulumi preview"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@pulumi/aws": "^7.0.0",
+    "@pulumi/pulumi": "^3.113.0",
+    "dotenv": "^17.2.3"
+  }
+}

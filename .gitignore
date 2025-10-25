@@ -1,0 +1,7 @@
+/target
+Cargo.lock
+.vscode
+
+# Environment files with sensitive configuration
+infra/.env
+.env

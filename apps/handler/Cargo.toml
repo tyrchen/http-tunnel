@@ -1,0 +1,42 @@
+[package]
+name = "http-tunnel-handler"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+categories.workspace = true
+keywords.workspace = true
+description = "HTTP tunnel handler application"
+
+[dependencies]
+# Workspace dependencies
+anyhow.workspace = true
+http-tunnel-common.workspace = true
+tokio = { workspace = true, features = ["macros"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+# HTTP types
+http = "1.3"
+
+# AWS Lambda
+lambda_runtime = "0.14"
+aws_lambda_events = "0.18"
+
+# AWS SDK
+aws-config = { version = "1.8", features = ["behavior-version-latest"] }
+aws-sdk-dynamodb = "1.96"
+aws-sdk-apigatewaymanagement = "1.87"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[[bin]]
+name = "handler"
+path = "src/main.rs"

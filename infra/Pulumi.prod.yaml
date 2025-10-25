@@ -1,0 +1,8 @@
+config:
+  aws:region: us-west-2
+  aws:profile: your-aws-profile
+  http-tunnel:environment: prod
+  http-tunnel:enableCustomDomain: "true"
+  http-tunnel:lambdaArchitecture: arm64
+  http-tunnel:lambdaMemorySize: "512"
+  http-tunnel:lambdaTimeout: "30"

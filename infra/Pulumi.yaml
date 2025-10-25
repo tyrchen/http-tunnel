@@ -1,0 +1,10 @@
+name: http-tunnel
+description: http tunnel for better local debugging
+runtime:
+  name: nodejs
+  options:
+    packagemanager: yarn
+config:
+  pulumi:tags:
+    value:
+      pulumi:template: aws-typescript
