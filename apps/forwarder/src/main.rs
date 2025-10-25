@@ -46,7 +46,7 @@ struct Args {
     endpoint: String,
 
     /// Authentication token (JWT)
-    #[arg(short, long, env = "TUNNEL_TOKEN")]
+    #[arg(short, long, env = "TTF_TOKEN")]
     token: Option<String>,
 
     /// Enable verbose logging
@@ -68,8 +68,11 @@ pub struct Config {
     /// Local service address (e.g., "http://127.0.0.1:3000")
     pub local_address: String,
 
-    /// WebSocket endpoint URL with optional token
+    /// WebSocket endpoint URL
     pub websocket_url: String,
+
+    /// Authentication token (JWT)
+    pub token: Option<String>,
 
     /// Connection timeout
     pub connect_timeout: Duration,
@@ -95,16 +98,10 @@ pub struct ReconnectConfig {
 
 impl Config {
     fn from_args(args: Args) -> Self {
-        let mut websocket_url = args.endpoint;
-
-        // Append token as query parameter if provided
-        if let Some(token) = args.token {
-            websocket_url = format!("{}?token={}", websocket_url, token);
-        }
-
         Self {
             local_address: format!("http://{}:{}", args.host, args.port),
-            websocket_url,
+            websocket_url: args.endpoint,
+            token: args.token,
             connect_timeout: Duration::from_secs(args.connect_timeout),
             request_timeout: Duration::from_secs(args.request_timeout),
             heartbeat_interval: Duration::from_secs(HEARTBEAT_INTERVAL_SECS),
@@ -205,9 +202,30 @@ impl ConnectionManager {
     async fn establish_connection(&self) -> Result<(WebSocket, String)> {
         debug!("Connecting to {}", self.config.websocket_url);
 
-        let (mut ws_stream, _) = connect_async(&self.config.websocket_url)
-            .await
-            .map_err(|e| TunnelError::ConnectionError(e.to_string()))?;
+        // Build WebSocket request with optional auth token
+        let (mut ws_stream, _) = if let Some(ref token) = self.config.token {
+            // Use Authorization header for auth (works with both direct and custom domains)
+            use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+            use tokio_tungstenite::tungstenite::http::HeaderValue;
+
+            let mut request = self.config.websocket_url.clone().into_client_request()
+                .map_err(|e| TunnelError::ConnectionError(format!("Invalid URL: {}", e)))?;
+
+            // Add token as Authorization header
+            request.headers_mut().insert(
+                "Authorization",
+                HeaderValue::from_str(&format!("Bearer {}", token))
+                    .map_err(|e| TunnelError::ConnectionError(format!("Invalid token: {}", e)))?
+            );
+
+            debug!("Connecting with authentication token (Authorization header)");
+            connect_async(request).await
+                .map_err(|e| TunnelError::ConnectionError(e.to_string()))?
+        } else {
+            debug!("Connecting without authentication");
+            connect_async(&self.config.websocket_url).await
+                .map_err(|e| TunnelError::ConnectionError(e.to_string()))?
+        };
 
         info!("✅ WebSocket connection established, sending Ready message");
 

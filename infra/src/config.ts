@@ -23,7 +23,6 @@ export interface AppConfig {
   monthlyBudget?: number;
   // Security settings
   requireAuth?: boolean;
-  jwtSecret?: string;
   // Rate limiting
   rateLimitPerSecond?: number;
   rateLimitBurst?: number;
@@ -45,7 +44,16 @@ export const appConfig: AppConfig = {
   enableMonitoring: config.getBoolean("enableMonitoring") ?? true,
   alertEmail: config.get("alertEmail"),
   monthlyBudget: config.getNumber("monthlyBudget") ?? 50,
+  // Security settings
+  requireAuth: config.getBoolean("requireAuth") ?? false,
+  // Rate limiting (defaults aligned with improvement plan)
+  rateLimitPerSecond: config.getNumber("rateLimitPerSecond") ?? 50,
+  rateLimitBurst: config.getNumber("rateLimitBurst") ?? 100,
+  perTunnelRateLimit: config.getNumber("perTunnelRateLimit") ?? 1000,
 };
+
+// JWT Secret is handled separately as it can be a Pulumi secret
+export const jwtSecret = config.getSecret("jwtSecret");
 
 export const tags = {
   Environment: appConfig.environment,

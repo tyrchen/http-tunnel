@@ -11,7 +11,7 @@ use http_tunnel_common::utils::{calculate_ttl, current_timestamp_secs, generate_
 use lambda_runtime::{Error, LambdaEvent};
 use tracing::{error, info};
 
-use crate::{SharedClients, auth, save_connection_metadata};
+use crate::{SharedClients, auth, error_handling::sanitize_error, save_connection_metadata};
 
 /// Handler for WebSocket $connect route
 pub async fn handle_connect(
@@ -64,7 +64,8 @@ pub async fn handle_connect(
                 "Failed to save connection metadata for {}: {}",
                 connection_id, e
             );
-            format!("Failed to register connection: {}", e)
+            // Sanitize error - don't expose internal details
+            sanitize_error(&e)
         })?;
 
     info!(

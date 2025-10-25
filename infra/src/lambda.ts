@@ -2,7 +2,7 @@ import * as aws from "@pulumi/aws";
 import * as pulumi from "@pulumi/pulumi";
 import * as path from "path";
 import * as fs from "fs";
-import { appConfig, tags } from "./config";
+import { appConfig, jwtSecret, tags } from "./config";
 
 // Use infra/lambda directory for Lambda code
 const lambdaCodePath = process.env.LAMBDA_CODE_PATH ||
@@ -38,7 +38,7 @@ export function createLambdaHandler(
     timeout: appConfig.lambdaTimeout,
     code: new pulumi.asset.FileArchive(lambdaCodePath),
     environment: {
-      variables: pulumi.all([eventBusName]).apply(([busName]) => ({
+      variables: pulumi.all([eventBusName, jwtSecret]).apply(([busName, secret]) => ({
         RUST_LOG: "info",
         CONNECTIONS_TABLE_NAME: connectionsTableName,
         PENDING_REQUESTS_TABLE_NAME: pendingRequestsTableName,
@@ -46,6 +46,11 @@ export function createLambdaHandler(
         WEBSOCKET_API_ENDPOINT: websocketApiEndpoint,
         EVENT_BUS_NAME: busName || `http-tunnel-events-${appConfig.environment}`,
         USE_EVENT_DRIVEN: "false", // Feature flag - set to "true" to enable
+        // Authentication
+        REQUIRE_AUTH: appConfig.requireAuth ? "true" : "false",
+        JWT_SECRET: secret || process.env.JWT_SECRET || "default-secret-change-in-production",
+        // Rate limiting
+        PER_TUNNEL_RATE_LIMIT: String(appConfig.perTunnelRateLimit || 1000),
       })),
     },
     tags: {

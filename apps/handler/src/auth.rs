@@ -27,9 +27,9 @@ pub fn is_auth_required() -> bool {
 }
 
 /// Extract token from WebSocket request
-/// Checks both query parameters and Authorization header
+/// Checks (in order): Authorization header, query parameters
 fn extract_token(request: &ApiGatewayWebsocketProxyRequest) -> Option<String> {
-    // First try Authorization header (preferred - not logged)
+    // First try Authorization header (preferred - works with custom domains and not logged)
     if let Some(auth_header) = request
         .headers
         .get("authorization")

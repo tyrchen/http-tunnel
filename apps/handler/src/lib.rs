@@ -22,6 +22,7 @@ use tracing::{debug, error};
 
 pub mod auth;
 pub mod content_rewrite;
+pub mod error_handling;
 pub mod handlers;
 
 /// Check if event-driven response pattern is enabled

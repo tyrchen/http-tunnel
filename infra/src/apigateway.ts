@@ -149,11 +149,15 @@ export function createApiGateways(handler: aws.lambda.Function): ApiGateways {
     sourceArn: pulumi.interpolate`${httpApi.executionArn}/*`,
   });
 
-  // HTTP stage
+  // HTTP stage with rate limiting
   const httpStage = new aws.apigatewayv2.Stage("http-stage", {
     apiId: httpApi.id,
     name: appConfig.environment,
     autoDeploy: true,
+    defaultRouteSettings: {
+      throttlingBurstLimit: appConfig.rateLimitBurst || 100,
+      throttlingRateLimit: appConfig.rateLimitPerSecond || 50,
+    },
     tags: {
       ...tags,
       Name: "HTTP Tunnel HTTP Stage",

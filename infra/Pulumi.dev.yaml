@@ -5,7 +5,8 @@ config:
   http-tunnel:lambdaArchitecture: arm64
   http-tunnel:lambdaMemorySize: "256"
   http-tunnel:lambdaTimeout: "30"
-  # Sensitive values - use: pulumi config set http-tunnel:domainName <value>
-  # Or create Pulumi.dev.local.yaml with sensitive values (gitignored)
-
-  aws:profile: sandbox-account-admin
+  http-tunnel:requireAuth: "false"
+  http-tunnel:jwtSecret:
+    secure: AAABAEq5lSGB7PW6HEXQrSMIx6drV8jxElx4muV+9ZXKPahKCE1Md+4=
+  aws:profile:
+    secure: AAABAF+0l835qKOdCoY4srVFnMSTDnhJJCzoWCr5yzo5cMJJafUl2aCTyinOUZMdn+8zORE=
