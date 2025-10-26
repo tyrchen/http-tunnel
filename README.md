@@ -1,26 +1,37 @@
 # HTTP Tunnel
 
-A serverless, Rust-based HTTP tunnel service similar to ngrok, built on AWS Lambda. Expose your local development server to the internet through a secure WebSocket connection.
+> 🌐 **[English](#english) | [中文文档](./README_CN.md)**
 
-## Overview
+A serverless HTTP tunnel built with Rust and AWS Lambda, providing secure access to local development servers through public URLs - similar to ngrok, but fully serverless and self-hosted.
+
+## English
+
+### Overview
 
 HTTP Tunnel allows you to expose local services (like `localhost:3000`) to the internet through a public URL. Perfect for:
 
-- Testing webhooks during local development
+- Testing webhooks during local development (Stripe, GitHub, Twilio, etc.)
 - Sharing work-in-progress with clients or teammates
 - Testing mobile apps against local backends
 - Demoing features without deploying
+- API development with external services requiring public URLs
+- IoT development with callback testing
 
-**Architecture**: Serverless (AWS Lambda + API Gateway + DynamoDB) for cost-effective, auto-scaling infrastructure.
+**Architecture**: Fully serverless (AWS Lambda + API Gateway + DynamoDB) for cost-effective, auto-scaling infrastructure with zero operational overhead.
 
-## Features
+### Features
 
-- **Secure WebSocket Connection**: Persistent connection between local agent and cloud service
-- **Automatic Reconnection**: Handles network interruptions gracefully
-- **Custom Domains**: Use your own domain names (optional)
-- **Serverless**: Zero operational overhead, pay only for what you use
-- **Fast**: Low latency request forwarding with Rust performance
-- **Open Source**: MIT licensed, fully customizable
+- **Serverless Architecture**: Zero operational overhead, pay only for actual usage
+- **Secure WebSocket Tunneling**: Encrypted persistent connections (WSS/HTTPS)
+- **Automatic Reconnection**: Exponential backoff strategy handles network interruptions gracefully
+- **JWT/JWKS Authentication**: Optional token-based authentication with RSA/HMAC support
+- **Custom Domains**: Support for custom domain names with ACM certificates
+- **Fast & Efficient**: Low-latency request forwarding powered by Rust performance
+- **Event-Driven**: Optional DynamoDB Streams + EventBridge for optimized response delivery
+- **Load Testing Ready**: Handles concurrent requests with proper timeout handling
+- **Multiple HTTP Methods**: Full support for GET, POST, PUT, DELETE, PATCH, HEAD, OPTIONS
+- **Binary Data Support**: Base64 encoding for binary request/response bodies
+- **Open Source**: MIT licensed, fully customizable and auditable
 
 ## Quick Start
 

@@ -1,6 +1,53 @@
-# Infrastructure Configuration
+# Infrastructure Deployment Guide
+
+> 🌐 **[English](#english) | [中文](#中文)**
 
 This directory contains Pulumi infrastructure-as-code for deploying the HTTP tunnel service to AWS.
+
+## English
+
+### Table of Contents
+
+- [Quick Start](#quick-start)
+- [Architecture Overview](#architecture-overview)
+- [Configuration](#configuration-architecture)
+- [Setup Instructions](#setup-instructions)
+- [Advanced Configuration](#advanced-configuration)
+- [Deployment Options](#deployment-options)
+- [Monitoring & Observability](#monitoring--observability)
+- [Troubleshooting](#troubleshooting)
+- [Security Best Practices](#security-best-practices)
+
+### Architecture Overview
+
+The infrastructure deploys the following AWS resources:
+
+**Core Components**:
+- **API Gateway WebSocket API**: Persistent connections for tunnel clients
+- **API Gateway HTTP API**: Public-facing HTTP requests
+- **Lambda Function**: Unified handler for all event types (ARM64 architecture)
+- **DynamoDB Tables**:
+  - `connections`: Active tunnel connections with GSI and TTL
+  - `pending_requests`: Request/response correlation with DynamoDB Streams
+- **EventBridge**:
+  - Event bus for event-driven response notifications
+  - Scheduled rules for cleanup tasks
+
+**Optional Components**:
+- **Custom Domains**: Route 53 + ACM certificates for branded URLs
+- **CloudWatch Dashboard**: Metrics visualization
+- **CloudWatch Alarms**: Automated alerting
+- **AWS Budgets**: Cost tracking and alerts
+
+**Resource Naming Convention**:
+```
+http-tunnel-{resource}-{environment}
+```
+
+Examples:
+- `http-tunnel-handler-dev` (Lambda function)
+- `http-tunnel-connections-dev` (DynamoDB table)
+- `http-tunnel-ws-dev` (WebSocket API)
 
 ## Quick Start
 
