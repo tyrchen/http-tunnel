@@ -3,6 +3,21 @@
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
 ---
+## [ttf-v0.3.0](https://github.com/compare/ttf-v0.2.1..ttf-v0.3.0) - 2025-10-26
+
+### Features
+
+- support wildcard sub domain - ([0ee99d9](https://github.com/commit/0ee99d9c6d572e8137d403627961dfee67b2345d)) - Tyr Chen
+
+### Miscellaneous Chores
+
+- bump version to 0.3.0 - ([5e6744e](https://github.com/commit/5e6744ecc8e6020daa1e9eb2eb96a3e467f85899)) - Tyr Chen
+
+### Other
+
+- Update CHANGELOG.md - ([a66bfd2](https://github.com/commit/a66bfd2fe44063f9209a7fc925f3b77a158c5c44)) - Tyr Chen
+
+---
 ## [ttf-v0.2.1] - 2025-10-26
 
 ### Features
