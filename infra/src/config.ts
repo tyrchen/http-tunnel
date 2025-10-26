@@ -27,6 +27,8 @@ export interface AppConfig {
   rateLimitPerSecond?: number;
   rateLimitBurst?: number;
   perTunnelRateLimit?: number;
+  // Performance
+  useEventDriven?: boolean;
 }
 
 export const appConfig: AppConfig = {
@@ -50,6 +52,8 @@ export const appConfig: AppConfig = {
   rateLimitPerSecond: config.getNumber("rateLimitPerSecond") ?? 50,
   rateLimitBurst: config.getNumber("rateLimitBurst") ?? 100,
   perTunnelRateLimit: config.getNumber("perTunnelRateLimit") ?? 1000,
+  // Performance
+  useEventDriven: config.getBoolean("useEventDriven") ?? false,
 };
 
 // JWT Secret is handled separately as it can be a Pulumi secret

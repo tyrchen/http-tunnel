@@ -247,8 +247,109 @@ pub async fn send_to_connection(
     Ok(())
 }
 
-/// Poll DynamoDB for response with exponential backoff
+/// Wait for response with event-driven or polling approach based on USE_EVENT_DRIVEN flag
 pub async fn wait_for_response(client: &DynamoDbClient, request_id: &str) -> Result<HttpResponse> {
+    if is_event_driven_enabled() {
+        wait_for_response_event_driven(client, request_id).await
+    } else {
+        wait_for_response_polling(client, request_id).await
+    }
+}
+
+/// Helper function to check for completed response in DynamoDB
+async fn check_for_response(
+    client: &DynamoDbClient,
+    table_name: &str,
+    request_id: &str,
+) -> Result<Option<HttpResponse>> {
+    let result = client
+        .get_item()
+        .table_name(table_name)
+        .key("requestId", AttributeValue::S(request_id.to_string()))
+        .send()
+        .await
+        .context("Failed to get pending request from DynamoDB")?;
+
+    if let Some(item) = result.item {
+        let status = item
+            .get("status")
+            .and_then(|v| v.as_s().ok())
+            .ok_or_else(|| anyhow!("Missing status in DynamoDB item"))?;
+
+        if status == "completed" {
+            // Extract response data
+            let response_data = item
+                .get("responseData")
+                .and_then(|v| v.as_s().ok())
+                .ok_or_else(|| anyhow!("Missing responseData in completed request"))?;
+
+            let response: HttpResponse = serde_json::from_str(response_data)
+                .context("Failed to parse response data JSON")?;
+
+            // Clean up pending request
+            if let Err(e) = client
+                .delete_item()
+                .table_name(table_name)
+                .key("requestId", AttributeValue::S(request_id.to_string()))
+                .send()
+                .await
+            {
+                error!("Failed to clean up pending request: {}", e);
+            }
+
+            return Ok(Some(response));
+        }
+    }
+
+    Ok(None)
+}
+
+/// Event-driven approach: Check DynamoDB immediately, sleep once, then check again
+/// This dramatically reduces wasted polling when combined with DynamoDB Streams
+async fn wait_for_response_event_driven(client: &DynamoDbClient, request_id: &str) -> Result<HttpResponse> {
+    let table_name = std::env::var("PENDING_REQUESTS_TABLE_NAME")
+        .context("PENDING_REQUESTS_TABLE_NAME environment variable not set")?;
+    let timeout = Duration::from_secs(REQUEST_TIMEOUT_SECS);
+    let start = Instant::now();
+
+    // With EventBridge notifications from DynamoDB Streams,
+    // responses should be ready almost immediately
+    // We use a simplified check pattern: immediate check, wait, final check
+
+    // First check (might already be ready)
+    if let Some(response) = check_for_response(client, &table_name, request_id).await? {
+        return Ok(response);
+    }
+
+    // DynamoDB Stream + EventBridge takes ~100-500ms to process
+    // Sleep for most of the remaining time
+    let wait_duration = Duration::from_millis(800);
+    tokio::time::sleep(wait_duration).await;
+
+    // Second check
+    if let Some(response) = check_for_response(client, &table_name, request_id).await? {
+        return Ok(response);
+    }
+
+    // Final polling loop for any edge cases (much shorter than before)
+    let mut poll_interval = Duration::from_millis(200);
+    loop {
+        if start.elapsed() > timeout {
+            return Err(anyhow!("Request timeout waiting for response"));
+        }
+
+        tokio::time::sleep(poll_interval).await;
+
+        if let Some(response) = check_for_response(client, &table_name, request_id).await? {
+            return Ok(response);
+        }
+
+        poll_interval = Duration::from_millis(500); // Fixed 500ms for final polls
+    }
+}
+
+/// Original polling approach with exponential backoff
+async fn wait_for_response_polling(client: &DynamoDbClient, request_id: &str) -> Result<HttpResponse> {
     let table_name = std::env::var("PENDING_REQUESTS_TABLE_NAME")
         .context("PENDING_REQUESTS_TABLE_NAME environment variable not set")?;
     let timeout = Duration::from_secs(REQUEST_TIMEOUT_SECS);

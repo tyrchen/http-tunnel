@@ -42,17 +42,19 @@ pub fn sanitize_error_with_message(e: &anyhow::Error, client_message: &str) -> S
 /// Some errors are safe to show (like validation errors), while others
 /// should be sanitized (like database errors)
 pub fn is_safe_error(e: &anyhow::Error) -> bool {
-    let error_str = format!("{:?}", e);
+    let error_str = format!("{}", e);
+    let error_debug = format!("{:?}", e);
 
     // Safe error patterns that don't leak internal details
-    error_str.contains("ValidationError")
-        || error_str.contains("InvalidTunnelId")
-        || error_str.contains("InvalidRequestId")
-        || error_str.contains("PathTooLong")
-        || error_str.contains("HeaderValueTooLong")
+    error_str.contains("Invalid tunnel ID")
+        || error_str.contains("Invalid request ID")
+        || error_str.contains("Invalid connection ID")
+        || error_str.contains("Path too long")
+        || error_str.contains("Header value too long")
         || error_str.contains("Request timeout")
         || error_str.contains("Missing tunnel ID")
         || error_str.contains("Request entity too large")
+        || error_debug.contains("ValidationError")
 }
 
 /// Get a user-friendly error message
@@ -96,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_safe_errors_are_identified() {
-        let validation_err = anyhow!("Invalid tunnel ID: ABC");
+        let validation_err = anyhow!("Invalid tunnel ID format: ABC");
         assert!(is_safe_error(&validation_err));
 
         let timeout_err = anyhow!("Request timeout waiting for response");
@@ -109,7 +111,7 @@ mod tests {
     #[test]
     fn test_client_error_message() {
         // Safe error should be returned as-is
-        let safe_err = anyhow!("Invalid tunnel ID format");
+        let safe_err = anyhow!("Invalid tunnel ID format: test");
         let msg = get_client_error_message(&safe_err);
         assert!(msg.contains("Invalid tunnel ID"));
 

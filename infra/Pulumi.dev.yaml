@@ -6,6 +6,7 @@ config:
   http-tunnel:lambdaMemorySize: "256"
   http-tunnel:lambdaTimeout: "30"
   http-tunnel:requireAuth: "false"
+  http-tunnel:useEventDriven: "true"
   http-tunnel:jwtSecret:
     secure: AAABAEq5lSGB7PW6HEXQrSMIx6drV8jxElx4muV+9ZXKPahKCE1Md+4=
   aws:profile:

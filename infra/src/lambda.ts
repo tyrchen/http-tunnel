@@ -45,7 +45,7 @@ export function createLambdaHandler(
         DOMAIN_NAME: appConfig.domainName,
         WEBSOCKET_API_ENDPOINT: websocketApiEndpoint,
         EVENT_BUS_NAME: busName || `http-tunnel-events-${appConfig.environment}`,
-        USE_EVENT_DRIVEN: "false", // Feature flag - set to "true" to enable
+        USE_EVENT_DRIVEN: appConfig.useEventDriven ? "true" : "false",
         // Authentication
         REQUIRE_AUTH: appConfig.requireAuth ? "true" : "false",
         JWT_SECRET: secret || process.env.JWT_SECRET || "default-secret-change-in-production",
