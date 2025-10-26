@@ -63,6 +63,12 @@ run-testapp:
 	@echo "Starting TodoMVC test app on port 3000..."
 	cd testapp && uv run python main.py
 
+publish:
+	@echo "Publishing to cargo..."
+	cargo publish -p http-tunnel-common
+	cargo publish -p ttf
+
+
 # Clean build artifacts
 clean:
 	@echo "Cleaning build artifacts..."
