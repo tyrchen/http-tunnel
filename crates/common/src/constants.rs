@@ -37,6 +37,15 @@ pub const POLL_MAX_INTERVAL_MS: u64 = 500;
 /// Polling backoff multiplier
 pub const POLL_BACKOFF_MULTIPLIER: u32 = 2;
 
+/// Optimized polling: first check interval (200ms) - covers fast responses
+pub const OPTIMIZED_POLL_FIRST_INTERVAL_MS: u64 = 200;
+
+/// Optimized polling: second check interval (300ms) - cumulative 500ms
+pub const OPTIMIZED_POLL_SECOND_INTERVAL_MS: u64 = 300;
+
+/// Optimized polling: final polling interval (400ms) - for edge cases
+pub const OPTIMIZED_POLL_FINAL_INTERVAL_MS: u64 = 400;
+
 #[cfg(test)]
 mod tests {
     use super::*;

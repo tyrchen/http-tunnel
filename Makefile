@@ -76,3 +76,11 @@ clean:
 	rm -rf infra/lambda/handler
 	rm -rf infra/node_modules
 	rm -rf infra/dist
+
+# bump release tags
+release:
+	@cargo release tag --execute
+	@git cliff -o CHANGELOG.md
+	@git commit -a -n -m "Update CHANGELOG.md" || true
+	@git push origin master
+	@cargo release push --execute

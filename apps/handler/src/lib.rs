@@ -12,8 +12,9 @@ use aws_sdk_dynamodb::types::AttributeValue;
 use aws_sdk_eventbridge::Client as EventBridgeClient;
 use http_tunnel_common::ConnectionMetadata;
 use http_tunnel_common::constants::{
-    PENDING_REQUEST_TTL_SECS, POLL_BACKOFF_MULTIPLIER, POLL_INITIAL_INTERVAL_MS,
-    POLL_MAX_INTERVAL_MS, REQUEST_TIMEOUT_SECS,
+    OPTIMIZED_POLL_FINAL_INTERVAL_MS, OPTIMIZED_POLL_FIRST_INTERVAL_MS,
+    OPTIMIZED_POLL_SECOND_INTERVAL_MS, PENDING_REQUEST_TTL_SECS, POLL_BACKOFF_MULTIPLIER,
+    POLL_INITIAL_INTERVAL_MS, POLL_MAX_INTERVAL_MS, REQUEST_TIMEOUT_SECS,
 };
 use http_tunnel_common::protocol::{HttpRequest, HttpResponse};
 use http_tunnel_common::utils::{calculate_ttl, current_timestamp_millis, current_timestamp_secs};
@@ -304,8 +305,9 @@ async fn check_for_response(
     Ok(None)
 }
 
-/// Event-driven approach: Check DynamoDB immediately, sleep once, then check again
-/// This dramatically reduces wasted polling when combined with DynamoDB Streams
+/// Optimized polling approach: Sleep-based polling with strategic intervals
+/// This dramatically reduces wasted polling by using optimized sleep intervals
+/// based on expected response latency distribution
 async fn wait_for_response_event_driven(
     client: &DynamoDbClient,
     request_id: &str,
@@ -315,39 +317,35 @@ async fn wait_for_response_event_driven(
     let timeout = Duration::from_secs(REQUEST_TIMEOUT_SECS);
     let start = Instant::now();
 
-    // With EventBridge notifications from DynamoDB Streams,
-    // responses should be ready almost immediately
-    // We use a simplified check pattern: immediate check, wait, final check
+    // Optimized polling strategy based on expected latency:
+    // - Agent processing + WebSocket round-trip: ~50-200ms
+    // - DynamoDB write + strong consistency propagation: ~50-100ms
+    // - ResponseHandler Lambda execution: ~50-300ms (cold start: ~500ms)
+    // → Expected total latency: P50 ~200ms, P95 ~600ms
 
-    // First check (might already be ready)
+    // First check after 200ms (covers fast responses)
+    tokio::time::sleep(Duration::from_millis(OPTIMIZED_POLL_FIRST_INTERVAL_MS)).await;
     if let Some(response) = check_for_response(client, &table_name, request_id).await? {
         return Ok(response);
     }
 
-    // DynamoDB Stream + EventBridge takes ~100-500ms to process
-    // Sleep for most of the remaining time
-    let wait_duration = Duration::from_millis(800);
-    tokio::time::sleep(wait_duration).await;
-
-    // Second check
+    // Second check after additional 300ms (cumulative: 500ms, covers P90+)
+    tokio::time::sleep(Duration::from_millis(OPTIMIZED_POLL_SECOND_INTERVAL_MS)).await;
     if let Some(response) = check_for_response(client, &table_name, request_id).await? {
         return Ok(response);
     }
 
-    // Final polling loop for any edge cases (much shorter than before)
-    let mut poll_interval = Duration::from_millis(200);
+    // Final polling loop with 400ms intervals for edge cases
     loop {
         if start.elapsed() > timeout {
             return Err(anyhow!("Request timeout waiting for response"));
         }
 
-        tokio::time::sleep(poll_interval).await;
+        tokio::time::sleep(Duration::from_millis(OPTIMIZED_POLL_FINAL_INTERVAL_MS)).await;
 
         if let Some(response) = check_for_response(client, &table_name, request_id).await? {
             return Ok(response);
         }
-
-        poll_interval = Duration::from_millis(500); // Fixed 500ms for final polls
     }
 }
 
