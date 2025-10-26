@@ -256,6 +256,8 @@ impl ConnectionManager {
                             connection_id,
                             tunnel_id: _,
                             public_url,
+                            subdomain_url: _,
+                            path_based_url: _,
                         }) = serde_json::from_str::<Message>(&text)
                         {
                             let mut state = self.connection_state.lock().await;
@@ -410,10 +412,20 @@ async fn handle_text_message(
             connection_id,
             tunnel_id: _,
             public_url,
+            subdomain_url,
+            path_based_url,
         } => {
             info!("Connection established");
             info!("  Connection ID: {}", connection_id);
             info!("  Public URL: {}", public_url);
+
+            // Display both URL formats if available
+            if let Some(subdomain) = subdomain_url {
+                info!("  Subdomain URL: {}", subdomain);
+            }
+            if let Some(path_based) = path_based_url {
+                info!("  Path-based URL: {}", path_based);
+            }
         }
 
         Message::HttpRequest(request) => {

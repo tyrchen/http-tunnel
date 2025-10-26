@@ -2,3 +2,5 @@
 /node_modules/
 dist
 *jwks.json
+*.dev.yaml
+*.prod.yaml

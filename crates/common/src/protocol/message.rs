@@ -16,6 +16,10 @@ pub enum Message {
         connection_id: String,
         tunnel_id: String,
         public_url: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        subdomain_url: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        path_based_url: Option<String>,
     },
 
     /// Data plane messages
@@ -64,7 +68,9 @@ mod tests {
         let msg = Message::ConnectionEstablished {
             connection_id: "conn_123".to_string(),
             tunnel_id: "abc123def456".to_string(),
-            public_url: "https://tunnel.example.com/abc123def456".to_string(),
+            public_url: "https://abc123def456.tunnel.example.com".to_string(),
+            subdomain_url: Some("https://abc123def456.tunnel.example.com".to_string()),
+            path_based_url: Some("https://tunnel.example.com/abc123def456".to_string()),
         };
 
         let json = serde_json::to_string(&msg).unwrap();
@@ -75,6 +81,27 @@ mod tests {
         match parsed {
             Message::ConnectionEstablished { connection_id, .. } => {
                 assert_eq!(connection_id, "conn_123");
+            }
+            _ => panic!("Expected ConnectionEstablished"),
+        }
+    }
+
+    #[test]
+    fn test_connection_established_backward_compat() {
+        // Test backward compatibility - old messages without subdomain_url should still parse
+        let json = r#"{"type":"connection_established","connection_id":"conn_123","tunnel_id":"abc123def456","public_url":"https://tunnel.example.com/abc123def456"}"#;
+
+        let parsed: Message = serde_json::from_str(json).unwrap();
+        match parsed {
+            Message::ConnectionEstablished {
+                connection_id,
+                subdomain_url,
+                path_based_url,
+                ..
+            } => {
+                assert_eq!(connection_id, "conn_123");
+                assert!(subdomain_url.is_none());
+                assert!(path_based_url.is_none());
             }
             _ => panic!("Expected ConnectionEstablished"),
         }

@@ -9,8 +9,16 @@ pub struct ConnectionMetadata {
     /// Unique tunnel ID assigned to this connection (path segment)
     pub tunnel_id: String,
 
-    /// Full public URL (https://{domain}/{tunnel_id})
+    /// Primary public URL (subdomain if enabled, otherwise path-based)
     pub public_url: String,
+
+    /// Subdomain-based URL (https://{tunnel_id}.{domain})
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subdomain_url: Option<String>,
+
+    /// Path-based URL (https://{domain}/{tunnel_id}) for backward compatibility
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path_based_url: Option<String>,
 
     /// Timestamp when connection was established (Unix epoch seconds)
     pub created_at: i64,
@@ -36,6 +44,8 @@ impl ConnectionMetadata {
             connection_id,
             tunnel_id,
             public_url,
+            subdomain_url: None,
+            path_based_url: None,
             created_at,
             ttl,
             client_info: None,

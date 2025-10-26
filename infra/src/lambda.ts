@@ -62,6 +62,8 @@ export function createLambdaHandler(
           WEBSOCKET_API_ENDPOINT: wsEndpoint,
           EVENT_BUS_NAME: busName || `http-tunnel-events-${appConfig.environment}`,
           USE_EVENT_DRIVEN: appConfig.useEventDriven ? "true" : "false",
+          // Subdomain routing
+          ENABLE_SUBDOMAIN_ROUTING: appConfig.enableSubdomainRouting ? "true" : "false",
           // Authentication
           REQUIRE_AUTH: appConfig.requireAuth ? "true" : "false",
           JWT_SECRET: secret || process.env.JWT_SECRET || "default-secret-change-in-production",

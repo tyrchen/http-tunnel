@@ -168,12 +168,25 @@ async fn handle_ready_message(
         .and_then(|v| v.as_s().ok())
         .ok_or("Missing publicUrl")?;
 
+    // Get optional subdomain and path-based URLs
+    let subdomain_url = item
+        .get("subdomainUrl")
+        .and_then(|v| v.as_s().ok())
+        .map(|s| s.to_string());
+
+    let path_based_url = item
+        .get("pathBasedUrl")
+        .and_then(|v| v.as_s().ok())
+        .map(|s| s.to_string());
+
     // Send ConnectionEstablished message
     if let Some(client) = apigw_management {
         let message = Message::ConnectionEstablished {
             connection_id: connection_id.to_string(),
             tunnel_id: tunnel_id.clone(),
             public_url: public_url.clone(),
+            subdomain_url,
+            path_based_url,
         };
 
         let message_json = serde_json::to_string(&message)

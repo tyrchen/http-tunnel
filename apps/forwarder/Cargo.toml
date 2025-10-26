@@ -18,7 +18,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow.workspace = true
-http-tunnel-common = { workspace = true, version = "0.2.0" }
+http-tunnel-common = { workspace = true, version = "0.2.1" }
 tokio = { workspace = true, features = [
   "rt-multi-thread",
   "macros",

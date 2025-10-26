@@ -12,7 +12,9 @@ export interface AppConfig {
   domainName: string;
   websocketDomainName?: string;
   enableCustomDomain: boolean;
+  enableSubdomainRouting?: boolean;
   certificateArn?: string;
+  hostedZoneId?: string;
   lambdaArchitecture: "x86_64" | "arm64";
   lambdaMemorySize: number;
   lambdaTimeout: number;
@@ -37,7 +39,9 @@ export const appConfig: AppConfig = {
   domainName: process.env.TUNNEL_DOMAIN_NAME || config.get("domainName") || "tunnel.example.com",
   websocketDomainName: process.env.TUNNEL_WEBSOCKET_DOMAIN_NAME || config.get("websocketDomainName"),
   enableCustomDomain: config.getBoolean("enableCustomDomain") ?? false,
+  enableSubdomainRouting: config.getBoolean("enableSubdomainRouting") ?? true,
   certificateArn: process.env.TUNNEL_CERTIFICATE_ARN || config.get("certificateArn"),
+  hostedZoneId: process.env.ROUTE53_HOSTED_ZONE_ID || config.get("hostedZoneId"),
   lambdaArchitecture: (config.get("lambdaArchitecture") as "x86_64" | "arm64") ?? "x86_64",
   lambdaMemorySize: config.getNumber("lambdaMemorySize") ?? 256,
   lambdaTimeout: config.getNumber("lambdaTimeout") ?? 30,

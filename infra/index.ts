@@ -272,8 +272,23 @@ export const lambdaFunctionArn = handler.arn;
 // Export custom domain info if enabled
 export const httpCustomDomain = customDomains?.httpCustomEndpoint;
 export const websocketCustomDomain = customDomains?.websocketCustomEndpoint;
-export const httpDomainTarget = customDomains?.httpDomainName.domainNameConfiguration.targetDomainName;
-export const websocketDomainTarget = customDomains?.websocketDomainName.domainNameConfiguration.targetDomainName;
+
+// Export domain targets for manual DNS setup
+// Use .apply() to properly handle Pulumi Outputs and avoid [unknown] values
+export const httpDomainTarget = customDomains
+  ? customDomains.httpDomainName.domainNameConfiguration.apply(config => config.targetDomainName)
+  : undefined;
+
+export const websocketDomainTarget = customDomains
+  ? customDomains.websocketDomainName.domainNameConfiguration.apply(config => config.targetDomainName)
+  : undefined;
+
+export const wildcardDomainTarget = customDomains?.wildcardDomainName
+  ? customDomains.wildcardDomainName.domainNameConfiguration.apply(config => config.targetDomainName)
+  : undefined;
+
+// Export domain names for reference
+export const wildcardDomain = customDomains?.wildcardDomainName?.domainName;
 
 // Export usage instructions
 export const forwarderCommand = customDomains

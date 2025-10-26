@@ -15,7 +15,7 @@ description = "HTTP tunnel handler application"
 [dependencies]
 # Workspace dependencies
 anyhow = { workspace = true }
-http-tunnel-common = { workspace = true, version = "0.2.0" }
+http-tunnel-common = { workspace = true, version = "0.2.1" }
 tokio = { workspace = true, features = ["macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }

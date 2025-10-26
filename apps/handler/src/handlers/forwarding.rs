@@ -14,8 +14,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     SharedClients, build_api_gateway_response, build_http_request, content_rewrite,
-    extract_tunnel_id_from_path, lookup_connection_by_tunnel_id, save_pending_request,
-    send_to_connection, strip_tunnel_id_from_path, wait_for_response,
+    detect_routing_mode, lookup_connection_by_tunnel_id, save_pending_request, send_to_connection,
+    wait_for_response,
 };
 
 /// Handler for HTTP API requests
@@ -26,31 +26,44 @@ pub async fn handle_forwarding(
     let mut request = event.payload;
     let request_id_context = request.request_context.request_id.clone();
 
-    // Extract tunnel ID from path (path-based routing)
-    // HTTP API v2.0 puts path in request.path (stage is stripped by API Gateway for payload format 2.0)
+    // Get domain from environment
+    let domain = std::env::var("DOMAIN_NAME").unwrap_or_else(|_| "tunnel.example.com".to_string());
+
+    // Extract host header
+    let host = request
+        .headers
+        .get("host")
+        .or_else(|| request.headers.get("Host"))
+        .and_then(|h| h.to_str().ok())
+        .ok_or_else(|| "Missing Host header".to_string())?;
+
     let original_path = request.path.as_deref().unwrap_or("/");
 
-    debug!("Processing HTTP request, path: {}", original_path);
-
-    let tunnel_id = extract_tunnel_id_from_path(original_path).map_err(|e| {
-        error!(
-            "Failed to extract tunnel ID from path {}: {}",
-            original_path, e
-        );
-        // Sanitized error - don't leak internal details
-        "Invalid request path".to_string()
-    })?;
-
-    // Strip tunnel ID from path before forwarding to local service
-    let actual_path = strip_tunnel_id_from_path(original_path);
-
     debug!(
-        "Forwarding request for tunnel_id: {} (method: {}, original_path: {}, actual_path: {})",
-        tunnel_id, request.http_method, original_path, actual_path
+        "Processing HTTP request, host: {}, path: {}",
+        host, original_path
     );
 
-    // Update request path to stripped version
-    request.path = Some(actual_path);
+    // Detect routing mode (subdomain vs path-based)
+    let routing_mode = detect_routing_mode(host, original_path, &domain).map_err(|e| {
+        error!(
+            "Failed to detect routing mode for host {} path {}: {}",
+            host, original_path, e
+        );
+        // Sanitized error - don't leak internal details
+        "Invalid request".to_string()
+    })?;
+
+    let tunnel_id = routing_mode.tunnel_id();
+    let forwarding_path = routing_mode.forwarding_path();
+
+    info!(
+        "Routing mode: {:?}, tunnel_id: {}, forwarding_path: {}",
+        routing_mode, tunnel_id, forwarding_path
+    );
+
+    // Update request path to forwarding path
+    request.path = Some(forwarding_path.to_string());
 
     // Enforce request size limits
     if let Some(body) = &request.body {
@@ -95,7 +108,7 @@ pub async fn handle_forwarding(
     }
 
     // Look up connection ID by tunnel ID
-    let connection_id = lookup_connection_by_tunnel_id(&clients.dynamodb, &tunnel_id)
+    let connection_id = lookup_connection_by_tunnel_id(&clients.dynamodb, tunnel_id)
         .await
         .map_err(|e| {
             error!(
@@ -166,63 +179,76 @@ pub async fn handle_forwarding(
                 request_id, response.status_code
             );
 
-            // Apply content rewriting if applicable
-            let content_type = response
-                .headers
-                .get("content-type")
-                .and_then(|v| v.first())
-                .map(|s| s.as_str())
-                .unwrap_or("");
+            // Apply content rewriting based on routing mode
+            if routing_mode.should_rewrite_content() {
+                // Path-based routing: apply content rewriting
+                let content_type = response
+                    .headers
+                    .get("content-type")
+                    .and_then(|v| v.first())
+                    .map(|s| s.as_str())
+                    .unwrap_or("");
 
-            // Only decode and rewrite if content type needs rewriting (performance optimization)
-            let should_rewrite = content_rewrite::should_rewrite_content(content_type);
+                // Only decode and rewrite if content type needs rewriting (performance optimization)
+                let should_rewrite = content_rewrite::should_rewrite_content(content_type);
 
-            let (rewritten_body, was_rewritten) = if should_rewrite {
-                // Decode body for rewriting
-                let body_bytes = http_tunnel_common::decode_body(&response.body)
-                    .map_err(|e| format!("Failed to decode response body: {}", e))?;
-                let body_str = String::from_utf8_lossy(&body_bytes);
+                let (rewritten_body, was_rewritten) = if should_rewrite {
+                    // Decode body for rewriting
+                    let body_bytes = http_tunnel_common::decode_body(&response.body)
+                        .map_err(|e| format!("Failed to decode response body: {}", e))?;
+                    let body_str = String::from_utf8_lossy(&body_bytes);
 
-                // Rewrite content (default strategy: FullRewrite)
-                content_rewrite::rewrite_response_content(
-                    &body_str,
-                    content_type,
-                    &tunnel_id,
-                    content_rewrite::RewriteStrategy::FullRewrite,
-                )
-                .unwrap_or_else(|e| {
-                    warn!("Content rewrite failed: {}, returning original", e);
-                    (body_str.to_string(), false)
-                })
+                    // Rewrite content (default strategy: FullRewrite)
+                    content_rewrite::rewrite_response_content(
+                        &body_str,
+                        content_type,
+                        tunnel_id,
+                        content_rewrite::RewriteStrategy::FullRewrite,
+                    )
+                    .unwrap_or_else(|e| {
+                        warn!("Content rewrite failed: {}, returning original", e);
+                        (body_str.to_string(), false)
+                    })
+                } else {
+                    // Skip decoding for binary content (images, videos, etc.)
+                    debug!("Skipping rewrite for binary content type: {}", content_type);
+                    (String::new(), false)
+                };
+
+                if was_rewritten {
+                    debug!(
+                        "Content rewritten for request {}: {} bytes",
+                        request_id,
+                        rewritten_body.len()
+                    );
+
+                    // Re-encode the rewritten body
+                    response.body = http_tunnel_common::encode_body(rewritten_body.as_bytes());
+
+                    // Update Content-Length header
+                    response.headers.insert(
+                        "content-length".to_string(),
+                        vec![rewritten_body.len().to_string()],
+                    );
+
+                    // Remove Transfer-Encoding header if present (we're not chunking)
+                    response.headers.remove("transfer-encoding");
+
+                    // Add debug header to indicate rewriting was applied
+                    response.headers.insert(
+                        "x-tunnel-rewrite-applied".to_string(),
+                        vec!["true".to_string()],
+                    );
+                }
             } else {
-                // Skip decoding for binary content (images, videos, etc.)
-                debug!("Skipping rewrite for binary content type: {}", content_type);
-                (String::new(), false)
-            };
-
-            if was_rewritten {
+                // Subdomain-based routing: skip content rewriting
                 debug!(
-                    "Content rewritten for request {}: {} bytes",
-                    request_id,
-                    rewritten_body.len()
+                    "Subdomain mode: skipping content rewriting for request {}",
+                    request_id
                 );
-
-                // Re-encode the rewritten body
-                response.body = http_tunnel_common::encode_body(rewritten_body.as_bytes());
-
-                // Update Content-Length header
                 response.headers.insert(
-                    "content-length".to_string(),
-                    vec![rewritten_body.len().to_string()],
-                );
-
-                // Remove Transfer-Encoding header if present (we're not chunking)
-                response.headers.remove("transfer-encoding");
-
-                // Add debug header to indicate rewriting was applied
-                response.headers.insert(
-                    "x-tunnel-rewrite-applied".to_string(),
-                    vec!["true".to_string()],
+                    "x-tunnel-routing-mode".to_string(),
+                    vec!["subdomain".to_string()],
                 );
             }
 

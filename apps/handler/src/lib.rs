@@ -69,6 +69,97 @@ pub fn strip_tunnel_id_from_path(path: &str) -> String {
     }
 }
 
+/// Routing mode enum - determines how tunnel ID is extracted and content is handled
+#[derive(Debug, Clone, PartialEq)]
+pub enum RoutingMode {
+    /// Path-based routing: tunnel.example.com/abc123/path
+    PathBased {
+        tunnel_id: String,
+        actual_path: String,
+    },
+    /// Subdomain-based routing: abc123.tunnel.example.com/path
+    SubdomainBased {
+        tunnel_id: String,
+        full_path: String,
+    },
+}
+
+impl RoutingMode {
+    /// Get tunnel ID regardless of routing mode
+    pub fn tunnel_id(&self) -> &str {
+        match self {
+            RoutingMode::PathBased { tunnel_id, .. } => tunnel_id,
+            RoutingMode::SubdomainBased { tunnel_id, .. } => tunnel_id,
+        }
+    }
+
+    /// Get the path to forward to local service
+    pub fn forwarding_path(&self) -> &str {
+        match self {
+            RoutingMode::PathBased { actual_path, .. } => actual_path,
+            RoutingMode::SubdomainBased { full_path, .. } => full_path,
+        }
+    }
+
+    /// Whether content rewriting should be applied
+    pub fn should_rewrite_content(&self) -> bool {
+        matches!(self, RoutingMode::PathBased { .. })
+    }
+}
+
+/// Extract subdomain from Host header
+/// Example: "whsxs3svzbxw.tunnel.example.com" with domain="tunnel.example.com" -> Some("whsxs3svzbxw")
+/// Example: "tunnel.example.com" with domain="tunnel.example.com" -> None
+pub fn extract_subdomain(host: &str, base_domain: &str) -> Result<Option<String>> {
+    // Remove port if present
+    let host = host.split(':').next().unwrap_or(host);
+
+    // Check if host ends with base domain
+    if !host.ends_with(base_domain) {
+        return Ok(None);
+    }
+
+    // Extract subdomain part
+    let subdomain_part = host.trim_end_matches(base_domain).trim_end_matches('.');
+
+    // If no subdomain, return None
+    if subdomain_part.is_empty() {
+        return Ok(None);
+    }
+
+    // Check if subdomain contains multiple parts (e.g., "foo.bar.tunnel.example.com")
+    if subdomain_part.contains('.') {
+        return Ok(None); // Only support single-level subdomain
+    }
+
+    // Validate tunnel ID format
+    http_tunnel_common::validation::validate_tunnel_id(subdomain_part)
+        .context("Invalid tunnel ID in subdomain")?;
+
+    Ok(Some(subdomain_part.to_string()))
+}
+
+/// Detect routing mode from request
+/// Tries subdomain-based routing first, falls back to path-based routing
+pub fn detect_routing_mode(host: &str, path: &str, base_domain: &str) -> Result<RoutingMode> {
+    // Try subdomain-based routing first
+    if let Some(tunnel_id) = extract_subdomain(host, base_domain)? {
+        return Ok(RoutingMode::SubdomainBased {
+            tunnel_id,
+            full_path: path.to_string(),
+        });
+    }
+
+    // Fall back to path-based routing
+    let tunnel_id = extract_tunnel_id_from_path(path)?;
+    let actual_path = strip_tunnel_id_from_path(path);
+
+    Ok(RoutingMode::PathBased {
+        tunnel_id,
+        actual_path,
+    })
+}
+
 /// Save connection metadata to DynamoDB
 pub async fn save_connection_metadata(
     client: &DynamoDbClient,
@@ -77,7 +168,7 @@ pub async fn save_connection_metadata(
     let table_name = std::env::var("CONNECTIONS_TABLE_NAME")
         .context("CONNECTIONS_TABLE_NAME environment variable not set")?;
 
-    client
+    let mut put_request = client
         .put_item()
         .table_name(&table_name)
         .item(
@@ -90,7 +181,17 @@ pub async fn save_connection_metadata(
             "createdAt",
             AttributeValue::N(metadata.created_at.to_string()),
         )
-        .item("ttl", AttributeValue::N(metadata.ttl.to_string()))
+        .item("ttl", AttributeValue::N(metadata.ttl.to_string()));
+
+    // Add optional fields if present
+    if let Some(ref subdomain_url) = metadata.subdomain_url {
+        put_request = put_request.item("subdomainUrl", AttributeValue::S(subdomain_url.clone()));
+    }
+    if let Some(ref path_based_url) = metadata.path_based_url {
+        put_request = put_request.item("pathBasedUrl", AttributeValue::S(path_based_url.clone()));
+    }
+
+    put_request
         .send()
         .await
         .context("Failed to save connection metadata to DynamoDB")?;
@@ -578,5 +679,110 @@ mod tests {
 
         assert_eq!(apigw_response.status_code, 204);
         assert!(apigw_response.body.is_none());
+    }
+
+    // Subdomain extraction tests
+    #[test]
+    fn test_extract_subdomain_valid() {
+        let result =
+            extract_subdomain("whsxs3svzbxw.tunnel.example.com", "tunnel.example.com").unwrap();
+        assert_eq!(result, Some("whsxs3svzbxw".to_string()));
+    }
+
+    #[test]
+    fn test_extract_subdomain_with_port() {
+        let result =
+            extract_subdomain("whsxs3svzbxw.tunnel.example.com:443", "tunnel.example.com").unwrap();
+        assert_eq!(result, Some("whsxs3svzbxw".to_string()));
+    }
+
+    #[test]
+    fn test_extract_subdomain_no_subdomain() {
+        let result = extract_subdomain("tunnel.example.com", "tunnel.example.com").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_subdomain_wrong_domain() {
+        let result = extract_subdomain("whsxs3svzbxw.other.com", "tunnel.example.com").unwrap();
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_extract_subdomain_multi_level() {
+        let result = extract_subdomain("foo.bar.tunnel.example.com", "tunnel.example.com").unwrap();
+        assert_eq!(result, None); // Multi-level not supported
+    }
+
+    #[test]
+    fn test_extract_subdomain_invalid_format() {
+        let result = extract_subdomain("INVALID_ID.tunnel.example.com", "tunnel.example.com");
+        assert!(result.is_err()); // Doesn't match tunnel ID regex
+    }
+
+    #[test]
+    fn test_detect_routing_mode_subdomain() {
+        let mode = detect_routing_mode(
+            "whsxs3svzbxw.tunnel.example.com",
+            "/docs/api",
+            "tunnel.example.com",
+        )
+        .unwrap();
+
+        assert_eq!(
+            mode,
+            RoutingMode::SubdomainBased {
+                tunnel_id: "whsxs3svzbxw".to_string(),
+                full_path: "/docs/api".to_string(),
+            }
+        );
+        assert_eq!(mode.tunnel_id(), "whsxs3svzbxw");
+        assert_eq!(mode.forwarding_path(), "/docs/api");
+        assert!(!mode.should_rewrite_content());
+    }
+
+    #[test]
+    fn test_detect_routing_mode_path_based() {
+        let mode = detect_routing_mode(
+            "tunnel.example.com",
+            "/whsxs3svzbxw/docs/api",
+            "tunnel.example.com",
+        )
+        .unwrap();
+
+        assert_eq!(
+            mode,
+            RoutingMode::PathBased {
+                tunnel_id: "whsxs3svzbxw".to_string(),
+                actual_path: "/docs/api".to_string(),
+            }
+        );
+        assert_eq!(mode.tunnel_id(), "whsxs3svzbxw");
+        assert_eq!(mode.forwarding_path(), "/docs/api");
+        assert!(mode.should_rewrite_content());
+    }
+
+    #[test]
+    fn test_routing_mode_equivalence() {
+        // Both should forward to same path
+        let subdomain_mode = detect_routing_mode(
+            "whsxs3svzbxw.tunnel.example.com",
+            "/docs",
+            "tunnel.example.com",
+        )
+        .unwrap();
+
+        let path_mode = detect_routing_mode(
+            "tunnel.example.com",
+            "/whsxs3svzbxw/docs",
+            "tunnel.example.com",
+        )
+        .unwrap();
+
+        assert_eq!(subdomain_mode.tunnel_id(), path_mode.tunnel_id());
+        assert_eq!(
+            subdomain_mode.forwarding_path(),
+            path_mode.forwarding_path()
+        );
     }
 }
