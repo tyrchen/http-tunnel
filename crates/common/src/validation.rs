@@ -8,9 +8,7 @@ use regex::Regex;
 use thiserror::Error;
 
 /// Regex for validating tunnel IDs (12 lowercase alphanumeric characters)
-static TUNNEL_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[a-z0-9]{12}$").unwrap()
-});
+static TUNNEL_ID_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"^[a-z0-9]{12}$").unwrap());
 
 /// Regex for validating request IDs (req_ prefix + UUID format)
 static REQUEST_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
@@ -18,9 +16,8 @@ static REQUEST_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
 });
 
 /// Regex for validating connection IDs (AWS API Gateway format)
-static CONNECTION_ID_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"^[A-Za-z0-9_=-]{1,128}$").unwrap()
-});
+static CONNECTION_ID_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"^[A-Za-z0-9_=-]{1,128}$").unwrap());
 
 /// Maximum length for HTTP header values
 pub const MAX_HEADER_VALUE_LENGTH: usize = 8192;
@@ -66,7 +63,7 @@ pub enum ValidationError {
 pub fn validate_tunnel_id(id: &str) -> Result<(), ValidationError> {
     if !TUNNEL_ID_REGEX.is_match(id) {
         return Err(ValidationError::InvalidTunnelId(
-            id.chars().take(50).collect::<String>() // Limit error message
+            id.chars().take(50).collect::<String>(), // Limit error message
         ));
     }
     Ok(())
@@ -87,7 +84,7 @@ pub fn validate_tunnel_id(id: &str) -> Result<(), ValidationError> {
 pub fn validate_request_id(id: &str) -> Result<(), ValidationError> {
     if !REQUEST_ID_REGEX.is_match(id) {
         return Err(ValidationError::InvalidRequestId(
-            id.chars().take(50).collect::<String>() // Limit error message
+            id.chars().take(50).collect::<String>(), // Limit error message
         ));
     }
     Ok(())
@@ -99,7 +96,7 @@ pub fn validate_request_id(id: &str) -> Result<(), ValidationError> {
 pub fn validate_connection_id(id: &str) -> Result<(), ValidationError> {
     if !CONNECTION_ID_REGEX.is_match(id) {
         return Err(ValidationError::InvalidConnectionId(
-            id.chars().take(50).collect::<String>() // Limit error message
+            id.chars().take(50).collect::<String>(), // Limit error message
         ));
     }
     Ok(())
@@ -165,10 +162,7 @@ pub fn sanitize_header_name(name: &str) -> Result<String, ValidationError> {
     }
 
     // Remove control characters
-    let sanitized: String = name
-        .chars()
-        .filter(|c| !c.is_control())
-        .collect();
+    let sanitized: String = name.chars().filter(|c| !c.is_control()).collect();
 
     if sanitized.is_empty() {
         return Err(ValidationError::InvalidHeaderValue);
@@ -238,8 +232,14 @@ mod tests {
 
     #[test]
     fn test_sanitize_header_value() {
-        assert_eq!(sanitize_header_value("normal value").unwrap(), "normal value");
-        assert_eq!(sanitize_header_value("value\twith\ttabs").unwrap(), "value\twith\ttabs");
+        assert_eq!(
+            sanitize_header_value("normal value").unwrap(),
+            "normal value"
+        );
+        assert_eq!(
+            sanitize_header_value("value\twith\ttabs").unwrap(),
+            "value\twith\ttabs"
+        );
 
         // Control characters removed
         let value_with_controls = "value\x00with\nnull\rand\rcr";
@@ -255,8 +255,14 @@ mod tests {
 
     #[test]
     fn test_sanitize_header_name() {
-        assert_eq!(sanitize_header_name("Content-Type").unwrap(), "content-type");
-        assert_eq!(sanitize_header_name("X-Custom-Header").unwrap(), "x-custom-header");
+        assert_eq!(
+            sanitize_header_name("Content-Type").unwrap(),
+            "content-type"
+        );
+        assert_eq!(
+            sanitize_header_name("X-Custom-Header").unwrap(),
+            "x-custom-header"
+        );
 
         // Control characters removed
         assert!(sanitize_header_name("header\nname").is_ok());

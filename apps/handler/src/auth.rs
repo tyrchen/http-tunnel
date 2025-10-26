@@ -34,15 +34,13 @@ fn extract_token(request: &ApiGatewayWebsocketProxyRequest) -> Option<String> {
         .headers
         .get("authorization")
         .or_else(|| request.headers.get("Authorization"))
-    {
-        if let Some(token) = auth_header
+        && let Some(token) = auth_header
             .to_str()
             .ok()
             .and_then(|s| s.strip_prefix("Bearer "))
-        {
-            debug!("Token extracted from Authorization header");
-            return Some(token.to_string());
-        }
+    {
+        debug!("Token extracted from Authorization header");
+        return Some(token.to_string());
     }
 
     // Fallback to query parameter (less secure - gets logged)

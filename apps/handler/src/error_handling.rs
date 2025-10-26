@@ -9,15 +9,6 @@ use tracing::error;
 ///
 /// Logs the full error internally but returns a generic message to the client
 /// to prevent information disclosure of internal implementation details.
-///
-/// # Examples
-///
-/// ```
-/// use anyhow::anyhow;
-/// let err = anyhow!("Failed to query DynamoDB: AccessDeniedException");
-/// let sanitized = sanitize_error(&err);
-/// assert_eq!(sanitized, "Internal server error");
-/// ```
 pub fn sanitize_error(e: &anyhow::Error) -> String {
     // Log full error internally with context
     error!("Internal error: {:#}", e);

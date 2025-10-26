@@ -306,7 +306,10 @@ async fn check_for_response(
 
 /// Event-driven approach: Check DynamoDB immediately, sleep once, then check again
 /// This dramatically reduces wasted polling when combined with DynamoDB Streams
-async fn wait_for_response_event_driven(client: &DynamoDbClient, request_id: &str) -> Result<HttpResponse> {
+async fn wait_for_response_event_driven(
+    client: &DynamoDbClient,
+    request_id: &str,
+) -> Result<HttpResponse> {
     let table_name = std::env::var("PENDING_REQUESTS_TABLE_NAME")
         .context("PENDING_REQUESTS_TABLE_NAME environment variable not set")?;
     let timeout = Duration::from_secs(REQUEST_TIMEOUT_SECS);
@@ -349,7 +352,10 @@ async fn wait_for_response_event_driven(client: &DynamoDbClient, request_id: &st
 }
 
 /// Original polling approach with exponential backoff
-async fn wait_for_response_polling(client: &DynamoDbClient, request_id: &str) -> Result<HttpResponse> {
+async fn wait_for_response_polling(
+    client: &DynamoDbClient,
+    request_id: &str,
+) -> Result<HttpResponse> {
     let table_name = std::env::var("PENDING_REQUESTS_TABLE_NAME")
         .context("PENDING_REQUESTS_TABLE_NAME environment variable not set")?;
     let timeout = Duration::from_secs(REQUEST_TIMEOUT_SECS);

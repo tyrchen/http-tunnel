@@ -24,7 +24,7 @@ type WebSocket = WebSocketStream<MaybeTlsStream<tokio::net::TcpStream>>;
 
 /// CLI arguments for the forwarder agent
 #[derive(Parser, Debug)]
-#[command(name = "http-tunnel-forwarder")]
+#[command(name = "ttf")]
 #[command(about = "Local HTTP tunnel forwarder agent", long_about = None)]
 #[command(version)]
 struct Args {
@@ -40,7 +40,7 @@ struct Args {
     #[arg(
         short,
         long,
-        env = "TUNNEL_ENDPOINT",
+        env = "TTF_ENDPOINT",
         default_value = "wss://your-websocket-api.execute-api.us-east-1.amazonaws.com/dev"
     )]
     endpoint: String,
@@ -208,22 +208,28 @@ impl ConnectionManager {
             use tokio_tungstenite::tungstenite::client::IntoClientRequest;
             use tokio_tungstenite::tungstenite::http::HeaderValue;
 
-            let mut request = self.config.websocket_url.clone().into_client_request()
+            let mut request = self
+                .config
+                .websocket_url
+                .clone()
+                .into_client_request()
                 .map_err(|e| TunnelError::ConnectionError(format!("Invalid URL: {}", e)))?;
 
             // Add token as Authorization header
             request.headers_mut().insert(
                 "Authorization",
                 HeaderValue::from_str(&format!("Bearer {}", token))
-                    .map_err(|e| TunnelError::ConnectionError(format!("Invalid token: {}", e)))?
+                    .map_err(|e| TunnelError::ConnectionError(format!("Invalid token: {}", e)))?,
             );
 
             debug!("Connecting with authentication token (Authorization header)");
-            connect_async(request).await
+            connect_async(request)
+                .await
                 .map_err(|e| TunnelError::ConnectionError(e.to_string()))?
         } else {
             debug!("Connecting without authentication");
-            connect_async(&self.config.websocket_url).await
+            connect_async(&self.config.websocket_url)
+                .await
                 .map_err(|e| TunnelError::ConnectionError(e.to_string()))?
         };
 
@@ -658,10 +664,8 @@ mod tests {
 
         let config = Config::from_args(args);
         assert_eq!(config.local_address, "http://127.0.0.1:3000");
-        assert_eq!(
-            config.websocket_url,
-            "wss://example.com?token=test_token_123"
-        );
+        assert_eq!(config.websocket_url, "wss://example.com");
+        assert_eq!(config.token, Some("test_token_123".to_string()));
         assert_eq!(config.connect_timeout, Duration::from_secs(15));
         assert_eq!(config.request_timeout, Duration::from_secs(30));
         assert_eq!(

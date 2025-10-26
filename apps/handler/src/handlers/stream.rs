@@ -27,8 +27,8 @@ pub async fn handle_stream(
     event: LambdaEvent<DynamoDbStreamEvent>,
     clients: &SharedClients,
 ) -> Result<(), Error> {
-    let event_bus_name = std::env::var("EVENT_BUS_NAME")
-        .unwrap_or_else(|_| format!("http-tunnel-events-dev"));
+    let event_bus_name =
+        std::env::var("EVENT_BUS_NAME").unwrap_or_else(|_| "http-tunnel-events-dev".to_string());
 
     let mut notifications_sent = 0;
     let mut notifications_skipped = 0;
@@ -48,7 +48,10 @@ pub async fn handle_stream(
                             notifications_sent += 1;
                         }
                         Err(e) => {
-                            error!("Failed to publish event for {}: {}", pending_req.request_id, e);
+                            error!(
+                                "Failed to publish event for {}: {}",
+                                pending_req.request_id, e
+                            );
                         }
                     }
                 } else {
@@ -83,7 +86,9 @@ fn is_status_change_to_completed(record: &EventRecord) -> bool {
         "INSERT" => true,
         "MODIFY" => {
             // Check old status was not "completed"
-            match serde_dynamo::from_item::<_, StreamPendingRequest>(record.change.old_image.clone()) {
+            match serde_dynamo::from_item::<_, StreamPendingRequest>(
+                record.change.old_image.clone(),
+            ) {
                 Ok(old_req) => old_req.status != "completed",
                 Err(_) => true, // If we can't parse old image, assume it's new
             }
@@ -131,7 +136,6 @@ async fn publish_response_event(
 mod tests {
     use super::*;
     use aws_lambda_events::event::dynamodb::StreamRecord;
-    use serde_dynamo::AttributeValue;
     use std::collections::HashMap;
 
     #[test]
@@ -148,8 +152,14 @@ mod tests {
     #[test]
     fn test_is_status_change_modify_from_pending() {
         let mut old_image = HashMap::new();
-        old_image.insert("status".to_string(), serde_dynamo::AttributeValue::S("pending".to_string()));
-        old_image.insert("requestId".to_string(), serde_dynamo::AttributeValue::S("req_123".to_string()));
+        old_image.insert(
+            "status".to_string(),
+            serde_dynamo::AttributeValue::S("pending".to_string()),
+        );
+        old_image.insert(
+            "requestId".to_string(),
+            serde_dynamo::AttributeValue::S("req_123".to_string()),
+        );
 
         let record = EventRecord {
             event_name: "MODIFY".to_string(),

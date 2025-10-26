@@ -10,6 +10,9 @@ pub mod forwarding;
 pub mod response;
 pub mod stream;
 
+#[cfg(test)]
+mod tests;
+
 pub use cleanup::handle_cleanup;
 pub use connect::handle_connect;
 pub use disconnect::handle_disconnect;
