@@ -59,6 +59,9 @@ export const appConfig: AppConfig = {
 // JWT Secret is handled separately as it can be a Pulumi secret
 export const jwtSecret = config.getSecret("jwtSecret");
 
+// JWKS can also be stored as a Pulumi secret (entire JSON content)
+export const jwksSecret = config.getSecret("jwks");
+
 export const tags = {
   Environment: appConfig.environment,
   Project: "http-tunnel",

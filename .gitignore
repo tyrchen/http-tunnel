@@ -6,3 +6,4 @@ Cargo.lock
 infra/.env
 .env
 infra/lambda/
+infra/jwks.json

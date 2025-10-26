@@ -26,6 +26,10 @@ build-lambda:
 	else \
 		echo "Error: Lambda build output not found"; exit 1; \
 	fi
+	@if [ -f "infra/jwks.json" ]; then \
+		cp infra/jwks.json infra/lambda/handler/jwks.json; \
+		echo "✓ JWKS file copied to Lambda package"; \
+	fi
 	@echo "✓ Lambda binary built and copied to infra/lambda/handler/bootstrap"
 
 # Build forwarder for local development

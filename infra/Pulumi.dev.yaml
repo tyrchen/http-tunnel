@@ -5,9 +5,11 @@ config:
   http-tunnel:lambdaArchitecture: arm64
   http-tunnel:lambdaMemorySize: "256"
   http-tunnel:lambdaTimeout: "30"
-  http-tunnel:requireAuth: "false"
+  http-tunnel:requireAuth: "true"
   http-tunnel:useEventDriven: "true"
   http-tunnel:jwtSecret:
     secure: AAABAEq5lSGB7PW6HEXQrSMIx6drV8jxElx4muV+9ZXKPahKCE1Md+4=
   aws:profile:
     secure: AAABAF+0l835qKOdCoY4srVFnMSTDnhJJCzoWCr5yzo5cMJJafUl2aCTyinOUZMdn+8zORE=
+  http-tunnel:jwks:
+    secure: AAABALLCMnsnp0UOP+HrmpAi4A5FrV3JPMpZ851JMlF+3GaTbfxQBHM2HJkZDbyXXSxfRSV5JUDpHYl7yk1PWEG7bguFmZSXAytE2xEjJ49MU5yxgy9fszT3EQHeflWzPj/vGd2NbFecQP7fb5nbsC1BVcTZBkQswWTcLxp1HAwzkvBfV54BsP8yJ4ytfFkfpu3ur7GJ9qG/+yQ03QKN+G312OCjHul2YQGSWmUxoBjRfeOwzB1FLrzRr5d6gIBJiORzHqQ5IAc+lVoUpjzEIhWtzgO/Qx8zMk+rnhvQ/V9olqaNjrXMJdbl+MirKCVgexzW4ALxEA08sHmgWNpy6ryWfNg6XIJYxlwvesdiCKx/kLq69EoTKzFvsJVL/0difDh+KFCxjkGGnNB1A0g6mol6Du3VnXxTID0T2pdOiM1IjjyuLyqjBZyspwPUVWM8e1w1vxScHuyH3ucvSTwG0ksYOF8q45D8gKQS4jXf328RPsV9ip5C/uWlZdlgP5P2pQVZir4NRGGuiaBuc/dhCFmdzoFNndA6NnTZV0GEjwt3QwT/gg2yFFF9McMhKs6PcUTDq92lTxyTuHZxhMvLjVT9GgnrrTzzPcMHxJDNUpo94u+33g==
