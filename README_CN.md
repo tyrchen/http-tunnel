@@ -35,48 +35,276 @@ HTTP Tunnel 允许你将本地服务（如 `localhost:3000`）通过公网 URL �
 
 ### 架构
 
-```
-┌─────────────────────┐         ┌──────────────────────────────────────┐
-│   本地服务           │         │      AWS 无服务器基础设施               │
-│  (localhost:3000)   │         │                                      │
-│                     │         │  ┌────────────────────────────────┐  │
-└──────────┬──────────┘         │  │ API Gateway (WebSocket API)    │  │
-           │                    │  │  wss://....amazonaws.com/dev   │  │
-    ┌──────▼───────┐            │  └───────────┬────────────────────┘  │
-    │  ttf 客户端   │◄───WSS─────┼──────────────┘                       │
-    │  (转发器)     │            │  ┌────────────────────────────────┐  │
-    └──────────────┘            │  │ API Gateway (HTTP API)         │  │
-                                │  │  https://...amazonaws.com      │  │
-                                │  └───────────┬────────────────────┘  │
-                                │              │                       │
-  公网请求 ─────────────────────┼───────────────┘                       │
-  https://xyz.execute-api...    │  ┌────────────▼───────────────────┐  │
-                                │  │ Lambda 处理器 (Rust)            │  │
-                                │  │ - ConnectHandler               │  │
-                                │  │ - DisconnectHandler            │  │
-                                │  │ - ForwardingHandler            │  │
-                                │  │ - ResponseHandler              │  │
-                                │  │ - CleanupHandler               │  │
-                                │  └────────────┬───────────────────┘  │
-                                │               │                      │
-                                │  ┌────────────▼───────────────────┐  │
-                                │  │ DynamoDB 表                    │  │
-                                │  │ - Connections (GSI + TTL)      │  │
-                                │  │ - PendingRequests (Streams)    │  │
-                                │  └────────────┬───────────────────┘  │
-                                │               │                      │
-                                │  ┌────────────▼───────────────────┐  │
-                                │  │ EventBridge (可选)              │  │
-                                │  │ - 事件驱动响应                   │  │
-                                │  │ - 定时清理                       │  │
-                                │  └────────────────────────────────┘  │
-                                └──────────────────────────────────────┘
+#### 系统概览
+
+```mermaid
+graph TB
+    subgraph "客户端环境"
+        Browser[外部客户端/浏览器]
+        LocalService[本地服务<br/>localhost:3000]
+        Forwarder[ttf - 转发器代理<br/>Rust CLI]
+    end
+
+    subgraph "AWS 云"
+        subgraph "API Gateway"
+            HTTPAPI[HTTP API<br/>公网端点]
+            WSAPI[WebSocket API<br/>代理连接]
+        end
+
+        subgraph "Lambda 函数 - 统一处理器"
+            ConnectHandler[连接处理器<br/>$connect 路由]
+            DisconnectHandler[断开处理器<br/>$disconnect 路由]
+            ResponseHandler[响应处理器<br/>$default 路由]
+            ForwardingHandler[转发处理器<br/>HTTP 请求]
+            CleanupHandler[清理处理器<br/>定时任务]
+            StreamHandler[流处理器<br/>DynamoDB Streams]
+        end
+
+        subgraph "数据存储"
+            DynamoDB[(DynamoDB)]
+            ConnectionsTable[连接表<br/>connectionId 主键<br/>tunnelId 全局二级索引]
+            PendingReqTable[待处理请求表<br/>requestId 主键<br/>status 字段]
+        end
+
+        EventBridge[EventBridge<br/>事件总线]
+        CloudWatch[CloudWatch 日志]
+    end
+
+    %% 外部请求流
+    Browser -->|HTTPS 请求| HTTPAPI
+    HTTPAPI -->|调用| ForwardingHandler
+
+    %% WebSocket 连接流
+    Forwarder -->|WSS 连接| WSAPI
+    WSAPI -->|$connect| ConnectHandler
+    WSAPI -->|$disconnect| DisconnectHandler
+    WSAPI -->|$default| ResponseHandler
+
+    %% 数据流
+    ConnectHandler -->|存储元数据| ConnectionsTable
+    DisconnectHandler -->|删除元数据| ConnectionsTable
+    ForwardingHandler -->|通过 tunnelId 查询| ConnectionsTable
+    ForwardingHandler -->|存储待处理| PendingReqTable
+    ForwardingHandler -->|通过 WS 发送| WSAPI
+
+    %% 响应流
+    WSAPI -->|转发请求| Forwarder
+    Forwarder -->|HTTP 请求| LocalService
+    LocalService -->|HTTP 响应| Forwarder
+    Forwarder -->|WS 消息| WSAPI
+    ResponseHandler -->|更新状态| PendingReqTable
+
+    %% 事件驱动响应
+    PendingReqTable -->|流| StreamHandler
+    StreamHandler -->|发布事件| EventBridge
+    EventBridge -.->|通知| ForwardingHandler
+
+    %% 清理流
+    EventBridge -->|定时| CleanupHandler
+    CleanupHandler -->|删除过期| ConnectionsTable
+    CleanupHandler -->|删除过期| PendingReqTable
+
+    %% 日志记录
+    ConnectHandler -.-> CloudWatch
+    ForwardingHandler -.-> CloudWatch
+    ResponseHandler -.-> CloudWatch
+
+    DynamoDB --> ConnectionsTable
+    DynamoDB --> PendingReqTable
+
+    classDef awsService fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    classDef lambda fill:#FF9900,stroke:#232F3E,stroke-width:1px,color:#fff
+    classDef storage fill:#3F8624,stroke:#232F3E,stroke-width:2px,color:#fff
+    classDef client fill:#146EB4,stroke:#232F3E,stroke-width:2px,color:#fff
+
+    class HTTPAPI,WSAPI,EventBridge awsService
+    class ConnectHandler,DisconnectHandler,ResponseHandler,ForwardingHandler,CleanupHandler,StreamHandler lambda
+    class DynamoDB,ConnectionsTable,PendingReqTable storage
+    class Browser,LocalService,Forwarder client
 ```
 
-**数据流**:
+**组件说明**:
+
+- **本地转发器** (`ttf`): 运行在开发机器上的 Rust CLI 代理
+- **Lambda 处理器**: 统一的无服务器函数，处理多种事件类型（WebSocket 和 HTTP）
+- **API Gateway**: WebSocket API 用于代理连接，HTTP API 用于公网请求
+- **DynamoDB**: 使用全局二级索引追踪连接和待处理请求，实现高效查询
+- **EventBridge**: 可选的事件驱动架构，用于优化响应传递
+
+#### 请求/响应流程
+
+```mermaid
+sequenceDiagram
+    participant Client as 外部客户端
+    participant HTTPAPI as API Gateway HTTP
+    participant FwdHandler as 转发处理器
+    participant DynamoDB as DynamoDB
+    participant WSAPI as WebSocket API
+    participant Agent as 转发器代理 (ttf)
+    participant LocalSvc as 本地服务
+
+    Note over Client,LocalSvc: 1. 发起 HTTP 请求
+
+    Client->>HTTPAPI: HTTPS GET/POST/等<br/>https://abc123.domain.com/api/users
+    HTTPAPI->>FwdHandler: 调用 Lambda，传入 API Gateway 事件
+
+    Note over FwdHandler: 从子域名或路径<br/>提取 tunnel_id
+
+    FwdHandler->>DynamoDB: 通过 tunnelId GSI<br/>查询连接表
+    DynamoDB-->>FwdHandler: 返回 connection_id
+
+    Note over FwdHandler: 生成 request_id<br/>构建 HttpRequest 消息
+
+    FwdHandler->>DynamoDB: 存储待处理请求<br/>(requestId, status=pending)
+
+    FwdHandler->>WSAPI: PostToConnection<br/>(HttpRequest 消息)
+    WSAPI->>Agent: WebSocket 文本帧<br/>(JSON 消息)
+
+    Note over Agent: 解析 HttpRequest<br/>生成并发任务
+
+    Agent->>LocalSvc: HTTP 请求<br/>http://localhost:3000/api/users
+    LocalSvc-->>Agent: HTTP 响应<br/>(状态码、头部、正文)
+
+    Note over Agent: 构建 HttpResponse<br/>Base64 编码正文
+
+    Agent->>WSAPI: WebSocket 文本帧<br/>(HttpResponse 消息)
+    WSAPI->>FwdHandler: $default 路由事件
+
+    Note over FwdHandler: 响应处理器处理消息
+
+    FwdHandler->>DynamoDB: 更新待处理请求<br/>(status=completed, responseData)
+
+    alt 事件驱动模式
+        DynamoDB->>FwdHandler: DynamoDB Stream 事件
+        Note over FwdHandler: 流处理器发布事件
+        Note over FwdHandler: 转发处理器从优化轮询中唤醒
+    else 轮询模式（默认）
+        loop 指数退避轮询
+            FwdHandler->>DynamoDB: GetItem (检查状态)
+            DynamoDB-->>FwdHandler: status=completed, responseData
+        end
+    end
+
+    Note over FwdHandler: 解码响应<br/>如需要则应用内容重写
+
+    FwdHandler->>DynamoDB: 删除待处理请求<br/>(清理)
+
+    FwdHandler-->>HTTPAPI: API Gateway 响应<br/>(状态码、头部、正文)
+    HTTPAPI-->>Client: HTTPS 响应
+```
+
+#### 连接生命周期
+
+```mermaid
+sequenceDiagram
+    participant Agent as 转发器代理
+    participant WSAPI as WebSocket API
+    participant ConnHandler as 连接处理器
+    participant DynamoDB as DynamoDB
+
+    Note over Agent: 启动 ttf CLI<br/>--endpoint wss://...
+
+    Agent->>WSAPI: WebSocket 升级请求
+
+    WSAPI->>ConnHandler: $connect 路由事件
+
+    Note over ConnHandler: 认证（如启用）<br/>生成 tunnel_id（12字符）
+
+    ConnHandler->>DynamoDB: PutItem 到连接表<br/>(connectionId, tunnelId, URLs, TTL=2小时)
+
+    ConnHandler-->>WSAPI: 200 OK
+    WSAPI-->>Agent: WebSocket 连接已建立
+
+    Agent->>WSAPI: 发送 Ready 消息
+    WSAPI->>ConnHandler: $default 路由 (Ready)
+
+    Note over ConnHandler: 响应处理器接收 Ready
+
+    ConnHandler->>DynamoDB: GetItem (查找连接元数据)
+
+    loop 指数退避重试
+        ConnHandler->>WSAPI: PostToConnection<br/>(ConnectionEstablished)
+        WSAPI->>Agent: WebSocket 消息，包含隧道信息
+    end
+
+    Note over Agent: 显示公网 URL<br/>启动心跳（5分钟间隔）
+
+    loop 活动连接
+        Agent->>WSAPI: Ping 消息（每5分钟）
+        WSAPI-->>Agent: Pong 响应
+    end
+
+    Note over WSAPI: 连接丢失或关闭
+
+    WSAPI->>ConnHandler: $disconnect 事件
+    Note over ConnHandler: 断开处理器清理
+
+    ConnHandler->>DynamoDB: 删除连接元数据
+
+    Note over Agent: 自动重连<br/>指数退避（1s→2s→4s...最大60s）
+```
+
+#### 错误处理流程
+
+```mermaid
+flowchart TD
+    Start([收到请求]) --> ValidateSize{正文大小<br/>< 2MB?}
+
+    ValidateSize -->|否| Error413[返回 413<br/>请求体过大]
+    ValidateSize -->|是| LookupTunnel[查询 DynamoDB<br/>通过 tunnel_id]
+
+    LookupTunnel --> TunnelExists{隧道<br/>存在?}
+    TunnelExists -->|否| Error404[返回 404<br/>隧道未找到]
+    TunnelExists -->|是| SavePending[保存待处理请求]
+
+    SavePending --> SendWS[发送到 WebSocket]
+
+    SendWS --> WSStatus{WebSocket<br/>状态?}
+    WSStatus -->|GoneException| Error502[返回 502<br/>错误的网关]
+    WSStatus -->|成功| WaitResponse[等待响应<br/>轮询/事件驱动]
+
+    WaitResponse --> Timeout{响应在<br/>25秒内?}
+    Timeout -->|否| Error504[返回 504<br/>网关超时]
+    Timeout -->|是| ProcessResponse[处理响应]
+
+    ProcessResponse --> AgentError{代理发送<br/>错误?}
+    AgentError -->|是| MapError{错误<br/>代码?}
+
+    MapError -->|InvalidRequest| Return400[返回 400<br/>错误请求]
+    MapError -->|Timeout| Return504[返回 504<br/>网关超时]
+    MapError -->|LocalServiceUnavailable| Return503[返回 503<br/>服务不可用]
+    MapError -->|InternalError| Return502[返回 502<br/>错误的网关]
+
+    AgentError -->|否| RewriteCheck{基于路径<br/>路由?}
+    RewriteCheck -->|是| Rewrite[应用内容重写]
+    RewriteCheck -->|否| BuildResponse[构建响应]
+    Rewrite --> BuildResponse
+
+    BuildResponse --> ReturnSuccess[返回响应<br/>给客户端]
+
+    Error413 --> End([结束])
+    Error404 --> End
+    Error502 --> End
+    Error504 --> End
+    Return400 --> End
+    Return503 --> End
+    ReturnSuccess --> End
+
+    style Start fill:#90EE90
+    style End fill:#90EE90
+    style Error413 fill:#FFB6C1
+    style Error404 fill:#FFB6C1
+    style Error502 fill:#FFB6C1
+    style Error504 fill:#FFB6C1
+    style Return400 fill:#FFB6C1
+    style Return503 fill:#FFB6C1
+    style ReturnSuccess fill:#87CEEB
+```
+
+**数据流说明**:
 
 1. **连接**: 客户端建立 WebSocket，接收唯一隧道 ID
-2. **HTTP 请求**: 公网请求访问 HTTP API，从路径提取隧道 ID
+2. **HTTP 请求**: 公网请求访问 HTTP API，从子域名或路径提取隧道 ID
 3. **转发**: Lambda 查找连接，通过 WebSocket 发送请求
 4. **处理**: 客户端转发到本地服务，获取响应
 5. **返回**: 客户端通过 WebSocket 发送响应，Lambda 返回给调用者

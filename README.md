@@ -94,20 +94,273 @@ Now any HTTP request to your public URL will be forwarded to your local service.
 
 ## Architecture
 
-```
-Internet → API Gateway HTTP → Lambda → WebSocket → Local Agent → localhost:3000
-                              ↓
-                         DynamoDB (state)
+### System Overview
+
+```mermaid
+graph TB
+    subgraph "Client Environment"
+        Browser[External Client/Browser]
+        LocalService[Local Service<br/>localhost:3000]
+        Forwarder[ttf - Forwarder Agent<br/>Rust CLI]
+    end
+
+    subgraph "AWS Cloud"
+        subgraph "API Gateway"
+            HTTPAPI[HTTP API<br/>Public Endpoints]
+            WSAPI[WebSocket API<br/>Agent Connections]
+        end
+
+        subgraph "Lambda Function - Unified Handler"
+            ConnectHandler[Connect Handler<br/>$connect route]
+            DisconnectHandler[Disconnect Handler<br/>$disconnect route]
+            ResponseHandler[Response Handler<br/>$default route]
+            ForwardingHandler[Forwarding Handler<br/>HTTP requests]
+            CleanupHandler[Cleanup Handler<br/>Scheduled task]
+            StreamHandler[Stream Handler<br/>DynamoDB Streams]
+        end
+
+        subgraph "Data Storage"
+            DynamoDB[(DynamoDB)]
+            ConnectionsTable[Connections Table<br/>connectionId PK<br/>tunnelId GSI]
+            PendingReqTable[Pending Requests Table<br/>requestId PK<br/>status field]
+        end
+
+        EventBridge[EventBridge<br/>Event Bus]
+        CloudWatch[CloudWatch Logs]
+    end
+
+    %% External Request Flow
+    Browser -->|HTTPS Request| HTTPAPI
+    HTTPAPI -->|Invoke| ForwardingHandler
+
+    %% WebSocket Connection Flow
+    Forwarder -->|WSS Connect| WSAPI
+    WSAPI -->|$connect| ConnectHandler
+    WSAPI -->|$disconnect| DisconnectHandler
+    WSAPI -->|$default| ResponseHandler
+
+    %% Data Flow
+    ConnectHandler -->|Store metadata| ConnectionsTable
+    DisconnectHandler -->|Delete metadata| ConnectionsTable
+    ForwardingHandler -->|Query by tunnelId| ConnectionsTable
+    ForwardingHandler -->|Store pending| PendingReqTable
+    ForwardingHandler -->|Send via WS| WSAPI
+
+    %% Response Flow
+    WSAPI -->|Forward request| Forwarder
+    Forwarder -->|HTTP Request| LocalService
+    LocalService -->|HTTP Response| Forwarder
+    Forwarder -->|WS Message| WSAPI
+    ResponseHandler -->|Update status| PendingReqTable
+
+    %% Event-Driven Response
+    PendingReqTable -->|Stream| StreamHandler
+    StreamHandler -->|Publish event| EventBridge
+    EventBridge -.->|Notify| ForwardingHandler
+
+    %% Cleanup Flow
+    EventBridge -->|Scheduled| CleanupHandler
+    CleanupHandler -->|Delete expired| ConnectionsTable
+    CleanupHandler -->|Delete expired| PendingReqTable
+
+    %% Logging
+    ConnectHandler -.-> CloudWatch
+    ForwardingHandler -.-> CloudWatch
+    ResponseHandler -.-> CloudWatch
+
+    DynamoDB --> ConnectionsTable
+    DynamoDB --> PendingReqTable
+
+    classDef awsService fill:#FF9900,stroke:#232F3E,stroke-width:2px,color:#fff
+    classDef lambda fill:#FF9900,stroke:#232F3E,stroke-width:1px,color:#fff
+    classDef storage fill:#3F8624,stroke:#232F3E,stroke-width:2px,color:#fff
+    classDef client fill:#146EB4,stroke:#232F3E,stroke-width:2px,color:#fff
+
+    class HTTPAPI,WSAPI,EventBridge awsService
+    class ConnectHandler,DisconnectHandler,ResponseHandler,ForwardingHandler,CleanupHandler,StreamHandler lambda
+    class DynamoDB,ConnectionsTable,PendingReqTable storage
+    class Browser,LocalService,Forwarder client
 ```
 
 **Components**:
 
 - **Local Forwarder** (`ttf`): Rust CLI agent running on your machine
-- **Lambda Handler**: Serverless functions for WebSocket and HTTP handling
+- **Lambda Handler**: Unified serverless function handling multiple event types (WebSocket and HTTP)
 - **API Gateway**: WebSocket API for agent connections, HTTP API for public requests
-- **DynamoDB**: Tracks connections and pending requests
+- **DynamoDB**: Tracks connections and pending requests with GSI for efficient lookups
+- **EventBridge**: Optional event-driven architecture for optimized response delivery
 
-For detailed architecture, see [specs/0001-idea.md](specs/0001-idea.md).
+### Request/Response Flow
+
+```mermaid
+sequenceDiagram
+    participant Client as External Client
+    participant HTTPAPI as API Gateway HTTP
+    participant FwdHandler as Forwarding Handler
+    participant DynamoDB as DynamoDB
+    participant WSAPI as WebSocket API
+    participant Agent as Forwarder Agent (ttf)
+    participant LocalSvc as Local Service
+
+    Note over Client,LocalSvc: 1. HTTP Request Initiated
+
+    Client->>HTTPAPI: HTTPS GET/POST/etc<br/>https://abc123.domain.com/api/users
+    HTTPAPI->>FwdHandler: Invoke Lambda with API Gateway event
+
+    Note over FwdHandler: Extract tunnel_id from<br/>subdomain or path
+
+    FwdHandler->>DynamoDB: Query Connections Table<br/>by tunnelId GSI
+    DynamoDB-->>FwdHandler: Return connection_id
+
+    Note over FwdHandler: Generate request_id<br/>Build HttpRequest message
+
+    FwdHandler->>DynamoDB: Store Pending Request<br/>(requestId, status=pending)
+
+    FwdHandler->>WSAPI: PostToConnection<br/>(HttpRequest message)
+    WSAPI->>Agent: WebSocket Text Frame<br/>(JSON message)
+
+    Note over Agent: Parse HttpRequest<br/>Spawn concurrent task
+
+    Agent->>LocalSvc: HTTP Request<br/>http://localhost:3000/api/users
+    LocalSvc-->>Agent: HTTP Response<br/>(status, headers, body)
+
+    Note over Agent: Build HttpResponse<br/>Base64 encode body
+
+    Agent->>WSAPI: WebSocket Text Frame<br/>(HttpResponse message)
+    WSAPI->>FwdHandler: $default route event
+
+    Note over FwdHandler: Response Handler processes message
+
+    FwdHandler->>DynamoDB: Update Pending Request<br/>(status=completed, responseData)
+
+    alt Event-Driven Mode
+        DynamoDB->>FwdHandler: DynamoDB Stream event
+        Note over FwdHandler: Stream Handler publishes event
+        Note over FwdHandler: Forwarding Handler wakes from optimized polling
+    else Polling Mode (default)
+        loop Poll with exponential backoff
+            FwdHandler->>DynamoDB: GetItem (check status)
+            DynamoDB-->>FwdHandler: status=completed, responseData
+        end
+    end
+
+    Note over FwdHandler: Decode response<br/>Apply content rewriting if needed
+
+    FwdHandler->>DynamoDB: Delete Pending Request<br/>(cleanup)
+
+    FwdHandler-->>HTTPAPI: API Gateway Response<br/>(status, headers, body)
+    HTTPAPI-->>Client: HTTPS Response
+```
+
+### Connection Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant Agent as Forwarder Agent
+    participant WSAPI as WebSocket API
+    participant ConnHandler as Connect Handler
+    participant DynamoDB as DynamoDB
+
+    Note over Agent: Start ttf CLI<br/>--endpoint wss://...
+
+    Agent->>WSAPI: WebSocket Upgrade Request
+
+    WSAPI->>ConnHandler: $connect route event
+
+    Note over ConnHandler: Authenticate (if enabled)<br/>Generate tunnel_id (12 chars)
+
+    ConnHandler->>DynamoDB: PutItem to Connections Table<br/>(connectionId, tunnelId, URLs, TTL=2hrs)
+
+    ConnHandler-->>WSAPI: 200 OK
+    WSAPI-->>Agent: WebSocket Connection Established
+
+    Agent->>WSAPI: Send Ready Message
+    WSAPI->>ConnHandler: $default route (Ready)
+
+    Note over ConnHandler: Response Handler receives Ready
+
+    ConnHandler->>DynamoDB: GetItem (lookup connection metadata)
+
+    loop Retry with exponential backoff
+        ConnHandler->>WSAPI: PostToConnection<br/>(ConnectionEstablished)
+        WSAPI->>Agent: WebSocket message with tunnel info
+    end
+
+    Note over Agent: Display public URLs<br/>Start heartbeat (5 min interval)
+
+    loop Active Connection
+        Agent->>WSAPI: Ping message (every 5 min)
+        WSAPI-->>Agent: Pong response
+    end
+
+    Note over WSAPI: Connection lost or closed
+
+    WSAPI->>ConnHandler: $disconnect event
+    Note over ConnHandler: Disconnect Handler cleanup
+
+    ConnHandler->>DynamoDB: Delete connection metadata
+
+    Note over Agent: Auto-reconnect with<br/>exponential backoff (1s→2s→4s...max 60s)
+```
+
+### Error Handling Flow
+
+```mermaid
+flowchart TD
+    Start([Request Received]) --> ValidateSize{Body Size<br/>< 2MB?}
+
+    ValidateSize -->|No| Error413[Return 413<br/>Payload Too Large]
+    ValidateSize -->|Yes| LookupTunnel[Query DynamoDB<br/>by tunnel_id]
+
+    LookupTunnel --> TunnelExists{Tunnel<br/>Found?}
+    TunnelExists -->|No| Error404[Return 404<br/>Tunnel Not Found]
+    TunnelExists -->|Yes| SavePending[Save Pending Request]
+
+    SavePending --> SendWS[Send to WebSocket]
+
+    SendWS --> WSStatus{WebSocket<br/>Status?}
+    WSStatus -->|GoneException| Error502[Return 502<br/>Bad Gateway]
+    WSStatus -->|Success| WaitResponse[Wait for Response<br/>Polling/Event-Driven]
+
+    WaitResponse --> Timeout{Response<br/>within 25s?}
+    Timeout -->|No| Error504[Return 504<br/>Gateway Timeout]
+    Timeout -->|Yes| ProcessResponse[Process Response]
+
+    ProcessResponse --> AgentError{Agent Sent<br/>Error?}
+    AgentError -->|Yes| MapError{Error<br/>Code?}
+
+    MapError -->|InvalidRequest| Return400[Return 400<br/>Bad Request]
+    MapError -->|Timeout| Return504[Return 504<br/>Gateway Timeout]
+    MapError -->|LocalServiceUnavailable| Return503[Return 503<br/>Service Unavailable]
+    MapError -->|InternalError| Return502[Return 502<br/>Bad Gateway]
+
+    AgentError -->|No| RewriteCheck{Path-based<br/>routing?}
+    RewriteCheck -->|Yes| Rewrite[Apply Content Rewriting]
+    RewriteCheck -->|No| BuildResponse[Build Response]
+    Rewrite --> BuildResponse
+
+    BuildResponse --> ReturnSuccess[Return Response<br/>to Client]
+
+    Error413 --> End([End])
+    Error404 --> End
+    Error502 --> End
+    Error504 --> End
+    Return400 --> End
+    Return503 --> End
+    ReturnSuccess --> End
+
+    style Start fill:#90EE90
+    style End fill:#90EE90
+    style Error413 fill:#FFB6C1
+    style Error404 fill:#FFB6C1
+    style Error502 fill:#FFB6C1
+    style Error504 fill:#FFB6C1
+    style Return400 fill:#FFB6C1
+    style Return503 fill:#FFB6C1
+    style ReturnSuccess fill:#87CEEB
+```
+
+For detailed architecture specifications, see [specs/0001-idea.md](specs/0001-idea.md).
 
 ## Usage
 
