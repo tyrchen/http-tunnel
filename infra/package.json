@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@pulumi/aws": "^7.0.0",
-    "@pulumi/pulumi": "^3.113.0",
+    "@pulumi/pulumi": "^3.217.1",
     "dotenv": "^17.2.3"
   }
 }
